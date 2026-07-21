@@ -22,8 +22,7 @@ class PrefixTuningPrompt(nn.Module):
         self.head_dim = embed_dim // num_heads
 
         prompt_shape = (num_layers, 2, prompt_length, num_heads, self.head_dim)
-        self.prompt = nn.Parameter(torch.randn(prompt_shape))
-
+        self.prompt = nn.Parameter(torch.empty(prompt_shape))
         nn.init.uniform_(self.prompt, -1, 1)
 
     def get_prompt_state(self) -> torch.Tensor:
@@ -33,7 +32,8 @@ class PrefixTuningPrompt(nn.Module):
         if state.shape != self.prompt.shape:
             raise ValueError(f"Expected prompt shape {self.prompt.shape}, got {state.shape}")
 
-        self.prompt = nn.Parameter(state.to(self.prompt.device))
+        with torch.no_grad():
+            self.prompt.copy_(state)
 
     def get_batched_prompt(self, batch_size: int) -> torch.Tensor:
         return self.prompt.unsqueeze(1).expand(-1, batch_size, -1, -1, -1, -1)

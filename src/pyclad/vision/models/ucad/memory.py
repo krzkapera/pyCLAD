@@ -34,41 +34,25 @@ class TaskMemoryBank:
         )
         self.tasks.append(memory)
 
-    def select_task(self, query_features: torch.Tensor) -> int:
-        if not self.tasks:
-            raise RuntimeError("Memory bank is empty. Cannot select a task.")
-
-        if len(self.tasks) == 1:
-            return 0
-
+    def task_distances(self, query_features: torch.Tensor) -> torch.Tensor:
         B, Np, C = query_features.shape
         query_flat = query_features.reshape(-1, C)
 
-        best_task_idx = 0
-        min_total_distance = float("inf")
-
-        for idx, task in enumerate(self.tasks):
+        distances = []
+        for task in self.tasks:
             key = task.key.to(query_features.device)
-            distances = torch.cdist(query_flat, key)
-            min_dist, _ = torch.min(distances, dim=1)
-            total_dist = torch.sum(min_dist).item()
+            min_dist = torch.cdist(query_flat, key).min(dim=1).values
+            distances.append(min_dist.reshape(B, Np).sum(dim=1))
 
-            if total_dist < min_total_distance:
-                min_total_distance = total_dist
-                best_task_idx = idx
+        return torch.stack(distances, dim=1)
 
-        return best_task_idx
+    def select_tasks(self, query_features: torch.Tensor) -> torch.Tensor:
+        return self.task_distances(query_features).argmin(dim=1)
 
     def get_prompt_state(self, task_idx: int) -> torch.Tensor:
-        if task_idx >= len(self.tasks):
-            raise IndexError(f"Task index {task_idx} out of range (max {len(self.tasks)-1})")
-
         return self.tasks[task_idx].prompt_state
 
     def get_knowledge(self, task_idx: int) -> torch.Tensor:
-        if task_idx >= len(self.tasks):
-            raise IndexError(f"Task index {task_idx} out of range (max {len(self.tasks)-1})")
-
         return self.tasks[task_idx].knowledge
 
     @property

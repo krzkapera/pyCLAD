@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import timm
 from timm.models.vision_transformer import Block, Attention
-from typing import Optional, Dict
+from typing import Optional
 
 from .prompt import PrefixTuningPrompt
 
@@ -68,6 +68,7 @@ class PromptedViT(nn.Module):
 
         self.embed_dim = self.vit.embed_dim
         self.num_heads = self.vit.blocks[0].attn.num_heads
+        self.grid_size: tuple[int, int] = self.vit.patch_embed.grid_size
 
         self.prompt_module = PrefixTuningPrompt(
             num_layers=num_prompt_layers,
@@ -128,13 +129,3 @@ class PromptedViT(nn.Module):
                 return x[:, 1:, :]
 
         raise ValueError(f"feature_layer {self.feature_layer} is out of bounds")
-
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
-        """
-        Forward pass for compatibility, returning both features.
-        Usually, methods will explicitly call `extract_features` or `extract_features_with_prompt`.
-        """
-        return {
-            "key_features": self.extract_features(x),
-            "prompted_features": self.extract_features_with_prompt(x),
-        }

@@ -1,10 +1,10 @@
 from .config import UCADConfig
 from .ucad_model import UCADModel
-from .sam import OfflineMaskProvider, SAM2OnlineMaskProvider
+from .sam import SAM2OfflineMaskProvider, SAM2OnlineMaskProvider
 
 __all__ = [
     "UCADConfig",
     "UCADModel",
-    "OfflineMaskProvider",
-    "SAM2OnlineMaskProvider"
+    "SAM2OnlineMaskProvider",
+    "SAM2OfflineMaskProvider",
 ]
