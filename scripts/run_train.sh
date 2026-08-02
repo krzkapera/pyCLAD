@@ -70,7 +70,7 @@ sync_to_remote() {
 
 submit_job() {
     echo "Zgłaszanie zadania do SLURM..."
-    JOB_ID=$(ssh "$CYFRONET_HOST" "cd $REMOTE_BASE && sbatch --parsable code/pyCLAD/scripts/athena/train.sbatch")
+    JOB_ID=$(ssh "$CYFRONET_HOST" "cd $REMOTE_BASE && sbatch --parsable code/pyCLAD/scripts/train.sbatch")
     echo "Job ID: $JOB_ID"
     save_active_job
 }

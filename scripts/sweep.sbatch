@@ -39,7 +39,7 @@ LOG="$RUN_DIR/${CFG}_s${SEED}.log"
 
 echo ">>> task=$SLURM_ARRAY_TASK_ID sam_config=$CFG seed=$SEED gpu=$CUDA_VISIBLE_DEVICES"
 
-$BASE/.venv/bin/python $BASE/code/pyCLAD/examples/ucad_sam2_sweep.py \
+$BASE/.venv/bin/python $BASE/code/pyCLAD/scripts/ucad_sam2_sweep.py \
     --sam-config "$CFG" --seed "$SEED" 2>&1 |
     tee "$LOG" |
     grep --line-buffered -E "EPOCH |RESULT |Traceback|CUDA error|MemoryError"

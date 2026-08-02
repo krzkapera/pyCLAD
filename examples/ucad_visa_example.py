@@ -20,17 +20,19 @@ from pyclad.vision.models.ucad import UCADConfig, UCADModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-MVTEC_ROOT = os.environ["MVTEC_ROOT"]
-MVTEC_MASKS_ROOT = os.environ.get("MVTEC_MASKS_ROOT")
-OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_mvtec.json"))
+VISA_ROOT = os.environ["VISA_ROOT"]
+VISA_MASKS_ROOT = os.environ.get("VISA_MASKS_ROOT")
+# The official VisA release ships split_csv/1cls.csv; folder-structured copies are read as "mvtec".
+VISA_BENCHMARK = os.environ.get("VISA_BENCHMARK", "visa")
+OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_visa.json"))
 INPUT_SIZE = (224, 224)
 
 
 def main():
     dataset = read_vision_benchmark_dataset(
-        root=MVTEC_ROOT,
-        benchmark="mvtec",
-        dataset_name="MVTec-AD",
+        root=VISA_ROOT,
+        benchmark=VISA_BENCHMARK,
+        dataset_name="VisA",
         data_mode="paths",
         resize_to=INPUT_SIZE,
     )
@@ -38,8 +40,8 @@ def main():
     config = UCADConfig(
         max_tasks=len(dataset.train_concepts()),
         input_size=INPUT_SIZE,
-        sam_masks_dir=MVTEC_MASKS_ROOT,
-        sam_images_root=MVTEC_ROOT if MVTEC_MASKS_ROOT else None,
+        sam_masks_dir=VISA_MASKS_ROOT,
+        sam_images_root=VISA_ROOT if VISA_MASKS_ROOT else None,
     )
     model = UCADModel(config)
     strategy = NaiveStrategy(model)

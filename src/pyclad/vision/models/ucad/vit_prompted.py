@@ -85,6 +85,9 @@ class PromptedViT(nn.Module):
                 bound_block_forward = _block_forward_with_prompt.__get__(block, Block)
                 block.forward = bound_block_forward
 
+    def reset_prompt(self):
+        self.prompt_module.reset_prompt()
+
     def get_prompt_state(self) -> torch.Tensor:
         return self.prompt_module.get_prompt_state()
 

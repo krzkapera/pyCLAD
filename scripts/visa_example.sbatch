@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ucad-mvtec
+#SBATCH --job-name=ucad-visa
 #SBATCH --account=plglscclass26-gpu-a100
 #SBATCH --partition=plgrid-gpu-a100
 #SBATCH --nodes=1
@@ -27,15 +27,16 @@ export TMPDIR=$BASE/cache/tmp
 export HF_HUB_OFFLINE=1
 export PYTHONPATH=$BASE/code/pyCLAD/src
 export PYTHONUNBUFFERED=1
-export MVTEC_ROOT=$BASE/data/mvtec2d
-export MVTEC_MASKS_ROOT=$BASE/data/mvtec2d-sam2
-export MVTEC_PATCHSIZE=${MVTEC_PATCHSIZE:-1}
+export VISA_ROOT=$BASE/data/visa
+export VISA_MASKS_ROOT=$BASE/data/visa-sam2
+export VISA_BENCHMARK=mvtec
 export OMP_NUM_THREADS=2
+export UCAD_OUTPUT=$RUN_DIR/ucad_visa.json
 
-LOG="$RUN_DIR/mvtec.log"
+LOG="$RUN_DIR/visa.log"
 
-$BASE/.venv/bin/python $BASE/code/pyCLAD/examples/ucad_mvtec_example.py 2>&1 |
+$BASE/.venv/bin/python $BASE/code/pyCLAD/examples/ucad_visa_example.py 2>&1 |
     tee "$LOG" |
-    grep --line-buffered -E "EPOCH |RESULT |Traceback|CUDA error|MemoryError|Task .* added"
+    grep --line-buffered -E "Starting (training|evaluation)|Traceback|CUDA error|MemoryError"
 
-echo "===TRAINING_DONE==="
+echo "===TRAINING_DONE=== $UCAD_OUTPUT"

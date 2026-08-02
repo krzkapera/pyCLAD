@@ -10,13 +10,18 @@ class UCADConfig(BaseModel):
     input_size: tuple[int, int] = Field(default=(224, 224), description="Input image size (H, W)")
 
     # Prompt settings
-    prompt_length: int = Field(default=5, description="Length of the prefix prompt per layer")
+    prompt_length: int = Field(default=1, description="Length of the prefix prompt per layer")
     num_prompt_layers: int = Field(default=12, description="Number of ViT layers to inject prompts into")
 
     # Memory settings
     max_tasks: int = Field(default=15, description="Maximum number of concepts/tasks to store")
     knowledge_size: int = Field(default=196, description="Size of the coreset target for knowledge bank")
     key_size: int = Field(default=196, description="Size of the coreset target for task key")
+    coreset_mode: Literal["exact", "approximate"] = Field(
+        default="exact",
+        description="'exact' selects deterministically in the full feature space; 'approximate' seeds from "
+        "random starting points and selects in a randomly projected space, as the reference UCAD implementation does",
+    )
 
     # Contrastive learning settings
     scl_temperature: float = Field(default=0.5, description="Temperature for structure-based contrastive loss")
@@ -31,13 +36,18 @@ class UCADConfig(BaseModel):
         description="Image-score reweighting by the local density of the knowledge bank: size of the neighborhood "
         "of the nearest match used in the softmax weight (>= 2); 0 disables it (image score = max patch score)",
     )
+    blur_sigma: float = Field(default=3.0, description="Gaussian smoothing applied to the upsampled anomaly map")
+    reset_prompt_per_task: bool = Field(
+        default=True,
+        description="Re-initialize the prompt before each concept instead of continuing from the previous one",
+    )
     loss_mode: Literal["linear", "exp_negatives"] = Field(
         default="exp_negatives",
         description="'linear' = positive and negative similarities enter the loss linearly, unweighted; "
         "'exp_negatives' = negative-pair similarities are exponentiated (temperature-scaled), weighting hard negatives more",
     )
     patchsize: int = Field(
-        default=3,
+        default=1,
         description="Side of the square neighborhood of patch features averaged into each embedding; 1 = no aggregation",
     )
     target_embed_dimension: int = Field(
@@ -65,3 +75,8 @@ class UCADConfig(BaseModel):
 
     # Hardware
     device: Optional[str] = Field(default=None, description="Device to use ('cuda', 'cpu', or None for auto)")
+    seed: int = Field(
+        default=0,
+        description="Seed of the data-loader generator; keeps batch order independent of the global RNG so that "
+        "evaluating the model does not perturb subsequent training",
+    )

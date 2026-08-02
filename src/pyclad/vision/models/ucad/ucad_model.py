@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -14,6 +14,7 @@ from .config import UCADConfig
 from .contrastive import structure_contrastive_loss
 from .coreset import greedy_coreset_sampling
 from .features import patchcore_aggregate
+from .inputs import build_dataset
 from .memory import TaskMemoryBank
 from .sam import MaskProvider, create_mask_provider
 from .scoring import NearestNeighborScorer
@@ -41,7 +42,7 @@ class UCADModel(VisionModel):
         self.scorer = NearestNeighborScorer(
             num_nn=self.config.anomaly_scorer_num_nn,
             reweighting_num_nn=self.config.reweighting_num_nn,
-            blur_sigma=3.0,
+            blur_sigma=self.config.blur_sigma,
         )
         self.mask_provider = mask_provider if mask_provider is not None else create_mask_provider(
             self.config, device=self.device
@@ -50,6 +51,9 @@ class UCADModel(VisionModel):
 
     def name(self) -> str:
         return "UCAD"
+
+    def additional_info(self) -> Dict[str, Any]:
+        return {"config": self.config.model_dump(mode="json")}
 
     def _init_device(self):
         if self.config.device is None:
@@ -67,7 +71,7 @@ class UCADModel(VisionModel):
     def _extract_all_features(self, data_loader, use_prompt: bool = False) -> torch.Tensor:
         features = []
         for batch in tqdm(data_loader, desc="Extracting features", leave=False):
-            images = self._get_images(batch).to(self.device)
+            images = batch["image"].to(self.device)
 
             if use_prompt:
                 feat = self.backbone.extract_features_with_prompt(images)
@@ -78,46 +82,46 @@ class UCADModel(VisionModel):
 
         return torch.cat(features, dim=0)
 
-    def _get_images(self, batch):
-        if isinstance(batch, (tuple, list)):
-            return batch[0]
-        elif isinstance(batch, dict) and "image" in batch:
-            return batch["image"]
-        return batch
-
-    def _get_paths(self, batch):
-        if isinstance(batch, dict) and "image_path" in batch:
-            return batch["image_path"]
-        return [f"concept_{self.current_task_id}_{i}.png" for i in range(len(self._get_images(batch)))]
-
-    def _as_loader(self, data, shuffle: bool) -> DataLoader:
-        if not hasattr(data, "data"):
+    def _as_loader(self, data: Union[DataLoader, Any], shuffle: bool) -> DataLoader:
+        if isinstance(data, DataLoader):
             return data
 
-        tensor_data = torch.tensor(data.data, dtype=torch.float32)
-        if tensor_data.ndim == 4 and tensor_data.shape[-1] == 3:
-            tensor_data = tensor_data.permute(0, 3, 1, 2)
+        dataset = build_dataset(data, self.config.input_size, f"concept_{self.current_task_id}")
+        return DataLoader(
+            dataset,
+            batch_size=self.config.batch_size,
+            shuffle=shuffle,
+            generator=torch.Generator().manual_seed(self.config.seed),
+        )
 
-        dataset = [
-            {"image": tensor_data[i], "image_path": f"concept_{self.current_task_id}_{i}.png"}
-            for i in range(len(tensor_data))
-        ]
-        return DataLoader(dataset, batch_size=self.config.batch_size, shuffle=shuffle)
+    def _sequential_view(self, loader: DataLoader) -> DataLoader:
+        """Coreset selection is order-dependent, so it must not see the shuffled training order."""
+        return DataLoader(
+            loader.dataset,
+            batch_size=self.config.batch_size,
+            shuffle=False,
+            generator=torch.Generator().manual_seed(self.config.seed),
+        )
 
-    def fit(self, training_data, epoch_callback: Optional[Callable[[int], None]] = None):
+    def fit(self, training_data):
         logger.info(f"Training UCAD on task {self.current_task_id}")
         train_loader = self._as_loader(training_data, shuffle=True)
+        extraction_loader = self._sequential_view(train_loader)
 
         self.backbone.eval()
-        key_features = self._extract_all_features(train_loader, use_prompt=False)
+        key_features = self._extract_all_features(extraction_loader, use_prompt=False)
 
         C = key_features.shape[-1]
         key_flat = key_features.reshape(-1, C)
 
         logger.info(f"Computing coreset for Task Key (target: {self.config.key_size})")
-        task_key = greedy_coreset_sampling(key_flat, self.config.key_size, device=self.device)
+        task_key = greedy_coreset_sampling(
+            key_flat, self.config.key_size, device=self.device, mode=self.config.coreset_mode
+        )
 
-        if self.memory.num_tasks > 0:
+        if self.config.reset_prompt_per_task:
+            self.backbone.reset_prompt()
+        elif self.memory.num_tasks > 0:
             self.backbone.set_prompt_state(self.memory.get_prompt_state(self.memory.num_tasks - 1))
 
         optimizer = optim.Adam(self.backbone.prompt_module.parameters(), lr=self.config.learning_rate)
@@ -128,8 +132,8 @@ class UCADModel(VisionModel):
             total_loss = 0.0
 
             for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{self.config.training_epochs}", leave=False):
-                images = self._get_images(batch).to(self.device)
-                paths = self._get_paths(batch)
+                images = batch["image"].to(self.device)
+                paths = batch["image_path"]
 
                 mask_labels = self.mask_provider.get_masks(paths, target_size=self.backbone.grid_size).to(self.device)
                 features = self.backbone.extract_features_with_prompt(images)
@@ -147,17 +151,14 @@ class UCADModel(VisionModel):
 
             logger.info(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}")
 
-            if epoch_callback is not None:
-                self.backbone.eval()
-                epoch_callback(epoch)
-                self.backbone.train()
-
         self.backbone.eval()
-        knowledge_features = self._extract_all_features(train_loader, use_prompt=True)
+        knowledge_features = self._extract_all_features(extraction_loader, use_prompt=True)
         knowledge_flat = knowledge_features.reshape(-1, C)
 
         logger.info(f"Computing coreset for Task Knowledge (target: {self.config.knowledge_size})")
-        task_knowledge = greedy_coreset_sampling(knowledge_flat, self.config.knowledge_size, device=self.device)
+        task_knowledge = greedy_coreset_sampling(
+            knowledge_flat, self.config.knowledge_size, device=self.device, mode=self.config.coreset_mode
+        )
         prompt_state = self.backbone.get_prompt_state()
 
         self.memory.add_task(
@@ -176,7 +177,7 @@ class UCADModel(VisionModel):
 
         with torch.no_grad():
             for batch in tqdm(test_loader, desc="Predicting", leave=False):
-                images = self._get_images(batch).to(self.device)
+                images = batch["image"].to(self.device)
 
                 frozen_features = self._aggregate(self.backbone.extract_features(images))
                 task_ids = self.memory.select_tasks(frozen_features)

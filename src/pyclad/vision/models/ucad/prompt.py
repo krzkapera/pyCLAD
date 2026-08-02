@@ -23,7 +23,11 @@ class PrefixTuningPrompt(nn.Module):
 
         prompt_shape = (num_layers, 2, prompt_length, num_heads, self.head_dim)
         self.prompt = nn.Parameter(torch.empty(prompt_shape))
-        nn.init.uniform_(self.prompt, -1, 1)
+        self.reset_prompt()
+
+    def reset_prompt(self):
+        with torch.no_grad():
+            nn.init.uniform_(self.prompt, -1, 1)
 
     def get_prompt_state(self) -> torch.Tensor:
         return self.prompt.detach().clone()

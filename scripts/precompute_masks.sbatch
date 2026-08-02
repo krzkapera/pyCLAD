@@ -46,7 +46,7 @@ LOG="$RUN_DIR/${DATASET}_shard${SHARD}.log"
 
 echo ">>> task=$SLURM_ARRAY_TASK_ID dataset=$DATASET shard=$SHARD/$NUM_SHARDS gpu=$CUDA_VISIBLE_DEVICES"
 
-$BASE/.venv/bin/python $BASE/code/pyCLAD/examples/precompute_sam2_masks.py \
+$BASE/.venv/bin/python $BASE/code/pyCLAD/scripts/precompute_sam2_masks.py \
     --dataset "$DATASET" --masks-root "$MASKS_ROOT" --shard-index "$SHARD" --num-shards "$NUM_SHARDS" 2>&1 |
     tee "$LOG" |
     grep --line-buffered -E "PROGRESS|DONE|Traceback|CUDA error|MemoryError"
