@@ -470,6 +470,7 @@ def read_vision_benchmark_dataset(
     color_mode: str = "rgb",
     max_train_samples_per_category: Optional[int] = None,
     max_test_samples_per_category: Optional[int] = None,
+    resize_mode: str = "stretch",
 ) -> ConceptsDataset:
     reader = build_vision_benchmark_reader(root=root, benchmark=benchmark)
     return reader.read_dataset(
@@ -480,6 +481,7 @@ def read_vision_benchmark_dataset(
         color_mode=color_mode,
         max_train_samples_per_category=max_train_samples_per_category,
         max_test_samples_per_category=max_test_samples_per_category,
+        resize_mode=resize_mode,
     )
 
 

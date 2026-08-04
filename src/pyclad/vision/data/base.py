@@ -11,6 +11,7 @@ from PIL import Image
 from pyclad.data.concept import Concept
 from pyclad.data.datasets.concepts_dataset import ConceptsDataset
 from pyclad.vision.data._utils import resolve_category_order
+from pyclad.vision.data.geometry import ResizeMode, resize_image, validate_resize_mode
 from pyclad.vision.data.masks import load_ground_truth_masks_for_samples
 from pyclad.vision.data.sample import VisionSample
 from pyclad.vision.data.vision_concept import VisionConcept
@@ -53,8 +54,10 @@ class VisionBenchmarkReader(ABC):
         color_mode: str = "rgb",
         max_train_samples_per_category: Optional[int] = None,
         max_test_samples_per_category: Optional[int] = None,
+        resize_mode: ResizeMode = "stretch",
     ) -> ConceptsDataset:
         validate_read_options(data_mode=data_mode, color_mode=color_mode)
+        validate_resize_mode(resize_mode)
         samples = self.index_samples(
             categories=categories,
             max_train_samples_per_category=max_train_samples_per_category,
@@ -67,6 +70,7 @@ class VisionBenchmarkReader(ABC):
             data_mode=data_mode,
             resize_to=resize_to,
             color_mode=color_mode,
+            resize_mode=resize_mode,
         )
 
 
@@ -77,6 +81,7 @@ def build_concepts_dataset_from_samples(
     data_mode: str = "numpy",
     resize_to: Optional[Tuple[int, int]] = None,
     color_mode: str = "rgb",
+    resize_mode: ResizeMode = "stretch",
 ) -> ConceptsDataset:
     """Build a ConceptsDataset from indexed VisionSamples, grouped by category."""
     selected_categories = resolve_category_order(samples=samples, categories=categories)
@@ -100,6 +105,7 @@ def build_concepts_dataset_from_samples(
                     data_mode=data_mode,
                     resize_to=resize_to,
                     color_mode=color_mode,
+                    resize_mode=resize_mode,
                 ),
                 labels=None,
             )
@@ -111,6 +117,7 @@ def build_concepts_dataset_from_samples(
                 masks, kept_indices = load_ground_truth_masks_for_samples(
                     test_samples,
                     resize_to=resize_to,
+                    resize_mode=resize_mode,
                 )
                 kept_samples = [test_samples[i] for i in kept_indices]
                 test_concepts.append(
@@ -121,6 +128,7 @@ def build_concepts_dataset_from_samples(
                             data_mode=data_mode,
                             resize_to=resize_to,
                             color_mode=color_mode,
+                            resize_mode=resize_mode,
                         ),
                         labels=np.asarray([s.image_label for s in kept_samples], dtype=np.int64),
                         masks=masks,
@@ -135,6 +143,7 @@ def build_concepts_dataset_from_samples(
                             data_mode=data_mode,
                             resize_to=resize_to,
                             color_mode=color_mode,
+                            resize_mode=resize_mode,
                         ),
                         labels=np.asarray([s.image_label for s in test_samples], dtype=np.int64),
                     )
@@ -181,11 +190,15 @@ def materialize_samples(
     data_mode: str,
     resize_to: Optional[Tuple[int, int]],
     color_mode: str,
+    resize_mode: ResizeMode = "stretch",
 ) -> np.ndarray:
     if data_mode == "paths":
         return np.asarray([str(sample.image_path) for sample in samples], dtype=object)
 
-    arrays = [_load_image(sample.image_path, resize_to=resize_to, color_mode=color_mode) for sample in samples]
+    arrays = [
+        _load_image(sample.image_path, resize_to=resize_to, color_mode=color_mode, resize_mode=resize_mode)
+        for sample in samples
+    ]
     if len(arrays) == 0:
         return np.asarray([], dtype=np.float32)
 
@@ -198,13 +211,18 @@ def materialize_samples(
         ) from exc
 
 
-def _load_image(image_path: Path, resize_to: Optional[Tuple[int, int]], color_mode: str) -> np.ndarray:
+def _load_image(
+    image_path: Path,
+    resize_to: Optional[Tuple[int, int]],
+    color_mode: str,
+    resize_mode: ResizeMode = "stretch",
+) -> np.ndarray:
     target_mode = "RGB" if color_mode == "rgb" else "L"
 
     with Image.open(image_path) as image:
         image = image.convert(target_mode)
         if resize_to is not None:
-            image = image.resize((resize_to[1], resize_to[0]), Image.Resampling.BILINEAR)
+            image = resize_image(image, resize_to, resize_mode, Image.Resampling.BILINEAR)
         array = np.asarray(image)
 
     if color_mode == "grayscale":

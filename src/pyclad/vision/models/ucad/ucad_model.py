@@ -87,7 +87,9 @@ class UCADModel(VisionModel):
         if isinstance(data, DataLoader):
             return data
 
-        dataset = build_dataset(data, self.config.input_size, f"concept_{self.current_task_id}")
+        dataset = build_dataset(
+            data, self.config.input_size, f"concept_{self.current_task_id}", self.config.resize_mode
+        )
         return DataLoader(
             dataset,
             batch_size=self.config.batch_size,

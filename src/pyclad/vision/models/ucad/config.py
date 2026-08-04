@@ -8,6 +8,12 @@ class UCADConfig(BaseModel):
     vit_model_name: str = Field(default="vit_base_patch16_224", description="Name of the timm ViT model")
     feature_layer: int = Field(default=5, description="ViT layer index to extract features from")
     input_size: tuple[int, int] = Field(default=(224, 224), description="Input image size (H, W)")
+    resize_mode: Literal["stretch", "short_side_crop"] = Field(
+        default="stretch",
+        description="'stretch' fits the whole image into input_size; 'short_side_crop' scales the short side "
+        "and crops the centre, as the reference implementation's loader does. Must match the resize_mode the "
+        "dataset's ground-truth masks were read with",
+    )
 
     # Prompt settings
     prompt_length: int = Field(default=1, description="Length of the prefix prompt per layer")

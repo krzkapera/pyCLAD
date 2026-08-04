@@ -12,6 +12,7 @@ sbatch submissions differing only in their --export list:
     UCAD_KNOWLEDGE    knowledge_size, one image = 196  (default 196)
     UCAD_PROMPT_LEN   prefix tokens per layer          (default 1; the reference uses 5)
     UCAD_CORESET      exact | approximate              (default exact)
+    UCAD_RESIZE_MODE  stretch | short_side_crop        (default stretch; the reference crops)
     UCAD_SEED         prompt and data-loader seed      (default 0)
     UCAD_OUTPUT       JSON destination                 (default ./ucad_probe.json)
 """
@@ -51,6 +52,7 @@ REWEIGHTING = int(os.environ.get("UCAD_REWEIGHTING", "0"))
 KNOWLEDGE_SIZE = int(os.environ.get("UCAD_KNOWLEDGE", "196"))
 PROMPT_LENGTH = int(os.environ.get("UCAD_PROMPT_LEN", "1"))
 CORESET_MODE = os.environ.get("UCAD_CORESET", "exact")
+RESIZE_MODE = os.environ.get("UCAD_RESIZE_MODE", "stretch")
 SEED = int(os.environ.get("UCAD_SEED", "0"))
 CATEGORIES = [category for category in os.environ.get("UCAD_CATEGORIES", "").split(",") if category]
 OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_probe.json"))
@@ -60,9 +62,9 @@ INPUT_SIZE = (224, 224)
 def main():
     logger.info(
         "PROBE dataset=%s epochs=%d batch_size=%d prompt_len=%d reweighting=%d knowledge=%d "
-        "coreset=%s seed=%d masks=%s categories=%s",
-        DATASET, EPOCHS, BATCH_SIZE, PROMPT_LENGTH, REWEIGHTING, KNOWLEDGE_SIZE, CORESET_MODE, SEED,
-        MASKS_DIR, CATEGORIES or "all",
+        "coreset=%s resize=%s seed=%d masks=%s categories=%s",
+        DATASET, EPOCHS, BATCH_SIZE, PROMPT_LENGTH, REWEIGHTING, KNOWLEDGE_SIZE, CORESET_MODE,
+        RESIZE_MODE, SEED, MASKS_DIR, CATEGORIES or "all",
     )
 
     dataset = read_vision_benchmark_dataset(
@@ -72,11 +74,13 @@ def main():
         categories=CATEGORIES or None,
         data_mode="paths",
         resize_to=INPUT_SIZE,
+        resize_mode=RESIZE_MODE,
     )
 
     config = UCADConfig(
         max_tasks=len(dataset.train_concepts()),
         input_size=INPUT_SIZE,
+        resize_mode=RESIZE_MODE,
         training_epochs=EPOCHS,
         batch_size=BATCH_SIZE,
         prompt_length=PROMPT_LENGTH,

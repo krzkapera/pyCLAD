@@ -10,12 +10,14 @@ from typing import Optional, Sequence
 import numpy as np
 from PIL import Image, ImageDraw
 
+from pyclad.vision.data.geometry import ResizeMode, resize_image
 from pyclad.vision.data.sample import VisionSample
 
 
 def load_ground_truth_mask(
     sample: VisionSample,
     resize_to: Optional[tuple[int, int]] = None,
+    resize_mode: ResizeMode = "stretch",
 ) -> np.ndarray:
     if sample.mask_path is None:
         height, width = resize_to if resize_to is not None else _image_size(sample.image_path)
@@ -28,7 +30,7 @@ def load_ground_truth_mask(
         mask = _load_bitmap_mask(mask_path)
 
     if resize_to is not None:
-        mask = _resize_binary_mask(mask, resize_to)
+        mask = _resize_binary_mask(mask, resize_to, resize_mode)
     return mask.astype(np.uint8, copy=False)
 
 
@@ -36,6 +38,7 @@ def load_ground_truth_masks_for_samples(
     samples: Sequence[VisionSample],
     resize_to: Optional[tuple[int, int]] = None,
     skip_missing_anomaly_masks: bool = True,
+    resize_mode: ResizeMode = "stretch",
 ) -> tuple[np.ndarray, np.ndarray]:
     masks: list[np.ndarray] = []
     kept_indices: list[int] = []
@@ -46,7 +49,7 @@ def load_ground_truth_masks_for_samples(
                 continue
             raise FileNotFoundError(f"Missing anomaly mask for sample: {sample.image_path}")
 
-        masks.append(load_ground_truth_mask(sample=sample, resize_to=resize_to))
+        masks.append(load_ground_truth_mask(sample=sample, resize_to=resize_to, resize_mode=resize_mode))
         kept_indices.append(index)
 
     if not masks:
@@ -171,11 +174,13 @@ def _rectangle_mask(points: Optional[dict], canvas_shape: tuple[int, int]) -> np
     return np.asarray(image, dtype=np.uint8)
 
 
-def _resize_binary_mask(mask: np.ndarray, resize_to: tuple[int, int]) -> np.ndarray:
-    """Resize a 0/1 binary mask to ``resize_to`` using NEAREST."""
-    if tuple(mask.shape) == tuple(resize_to):
+def _resize_binary_mask(
+    mask: np.ndarray, resize_to: tuple[int, int], resize_mode: ResizeMode = "stretch"
+) -> np.ndarray:
+    """Resize a 0/1 binary mask to ``resize_to`` using NEAREST, following the image convention."""
+    if tuple(mask.shape) == tuple(resize_to) and resize_mode == "stretch":
         return mask.astype(np.uint8, copy=False)
 
     image = Image.fromarray((mask > 0).astype(np.uint8) * 255, mode="L")
-    resized = image.resize((resize_to[1], resize_to[0]), Image.Resampling.NEAREST)
+    resized = resize_image(image, resize_to, resize_mode, Image.Resampling.NEAREST)
     return (np.asarray(resized) > 0).astype(np.uint8, copy=False)

@@ -122,6 +122,21 @@ def test_read_vision_benchmark_dataset_supports_visa_folder_preset(tmp_path: Pat
     assert samples[1].mask_path == root / "candle" / "ground_truth" / "bad" / "000.png"
 
 
+def test_read_vision_benchmark_dataset_short_side_crop_keeps_aspect_ratio(tmp_path: Path):
+    root = tmp_path / "wide_like"
+    _write_helper_rgb(root / "widget" / "train" / "good" / "000.png", color=(10, 20, 30), size=(12, 4))
+    _write_helper_rgb(root / "widget" / "test" / "good" / "100.png", color=(20, 30, 40), size=(12, 4))
+    _write_helper_rgb(root / "widget" / "test" / "crack" / "101.png", color=(30, 40, 50), size=(12, 4))
+    _write_helper_mask(root / "widget" / "ground_truth" / "crack" / "101_mask.png", value=255, size=(12, 4))
+
+    dataset = read_vision_benchmark_dataset(
+        root=root, benchmark="mvtec", resize_to=(4, 4), resize_mode="short_side_crop"
+    )
+
+    assert dataset.train_concepts()[0].data.shape == (1, 4, 4, 3)
+    assert dataset.test_concepts()[0].masks.shape == (2, 4, 4)
+
+
 def test_read_vision_benchmark_dataset_supports_custom_folder_spec_and_paths_mode(tmp_path: Path):
     root = tmp_path / "custom_like"
     _write_rgb_image(root / "fabric" / "train" / "normal" / "000.png", (10, 10, 10))
