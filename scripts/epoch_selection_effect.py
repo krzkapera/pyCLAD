@@ -9,8 +9,9 @@ Usage: epoch_selection_effect.py    (configured through the environment)
 The reference keeps, per concept, the epoch whose test-set image AUROC is highest, so its reported
 number is a maximum over epochs rather than the value of a fixed one. This trains a concept, scores
 the test set separately with every epoch's prompt and knowledge, and reports each epoch's metrics
-next to their mean and maximum: the gap between the last epoch and the maximum is what the selection
-buys, and it cannot be had without test labels.
+next to their mean and maximum. The reference compares nothing to its own last epoch - it reports the
+maximum - so the informative figure is how far the maximum sits above the average epoch, and that gap
+cannot be had without test labels.
 """
 
 import logging
@@ -79,9 +80,12 @@ def main():
         for epoch, (image, pixel) in enumerate(per_epoch, start=1):
             logger.info("SELECTION %s epoch=%d image_auroc=%.4f pixel_aupr=%.4f", test_concept.name, epoch, image, pixel)
         logger.info(
-            "SELECTION %s last=%.4f mean=%.4f best=%.4f selection_gain=%.4f | pixel last=%.4f best=%.4f gain=%.4f",
-            test_concept.name, images[-1], float(np.mean(images)), max(images), max(images) - images[-1],
-            pixels[-1], max(pixels), max(pixels) - pixels[-1],
+            "SELECTION %s image last=%.4f mean=%.4f best=%.4f spread=%.4f gain_over_mean=%.4f | "
+            "pixel last=%.4f mean=%.4f best=%.4f gain_over_mean=%.4f",
+            test_concept.name,
+            images[-1], float(np.mean(images)), max(images), max(images) - min(images),
+            max(images) - float(np.mean(images)),
+            pixels[-1], float(np.mean(pixels)), max(pixels), max(pixels) - float(np.mean(pixels)),
         )
 
 
