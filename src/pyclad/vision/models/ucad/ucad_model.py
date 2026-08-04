@@ -36,6 +36,7 @@ class UCADModel(VisionModel):
             feature_layer=self.config.feature_layer,
             prompt_length=self.config.prompt_length,
             num_prompt_layers=self.config.num_prompt_layers,
+            seed=self.config.seed,
         ).to(self.device)
 
         self.memory = TaskMemoryBank(max_tasks=self.config.max_tasks)

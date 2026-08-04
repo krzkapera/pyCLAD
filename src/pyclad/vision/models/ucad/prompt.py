@@ -9,6 +9,7 @@ class PrefixTuningPrompt(nn.Module):
         prompt_length: int = 1,
         num_heads: int = 12,
         embed_dim: int = 768,
+        seed: int = 0,
     ):
         super().__init__()
 
@@ -22,12 +23,17 @@ class PrefixTuningPrompt(nn.Module):
         self.head_dim = embed_dim // num_heads
 
         prompt_shape = (num_layers, 2, prompt_length, num_heads, self.head_dim)
+        self._generator = torch.Generator().manual_seed(seed)
         self.prompt = nn.Parameter(torch.empty(prompt_shape))
         self.reset_prompt()
 
     def reset_prompt(self):
+        """Draws a fresh prompt from the module's own generator, on the CPU regardless of the
+        parameter's device, so that the initialization - the only trained state in UCAD - is
+        reproducible and independent of the global RNG."""
         with torch.no_grad():
-            nn.init.uniform_(self.prompt, -1, 1)
+            values = torch.empty(self.prompt.shape).uniform_(-1, 1, generator=self._generator)
+            self.prompt.copy_(values)
 
     def get_prompt_state(self) -> torch.Tensor:
         return self.prompt.detach().clone()

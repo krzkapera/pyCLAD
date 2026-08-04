@@ -77,6 +77,6 @@ class UCADConfig(BaseModel):
     device: Optional[str] = Field(default=None, description="Device to use ('cuda', 'cpu', or None for auto)")
     seed: int = Field(
         default=0,
-        description="Seed of the data-loader generator; keeps batch order independent of the global RNG so that "
-        "evaluating the model does not perturb subsequent training",
+        description="Seed of the prompt initialization and of the data-loader generator; keeps both independent "
+        "of the global RNG so that evaluating the model does not perturb subsequent training",
     )

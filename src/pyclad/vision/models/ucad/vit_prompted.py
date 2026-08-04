@@ -53,6 +53,7 @@ class PromptedViT(nn.Module):
         feature_layer: int = 5,
         prompt_length: int = 1,
         num_prompt_layers: int = 12,
+        seed: int = 0,
     ):
         super().__init__()
 
@@ -75,6 +76,7 @@ class PromptedViT(nn.Module):
             prompt_length=prompt_length,
             num_heads=self.num_heads,
             embed_dim=self.embed_dim,
+            seed=seed,
         )
 
         for i, block in enumerate(self.vit.blocks):
