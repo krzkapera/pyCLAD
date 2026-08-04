@@ -172,6 +172,7 @@ lightning_logs
 
 # visual datasets
 examples/resources/vision/
+*.zip
 
 # custom
 memory
