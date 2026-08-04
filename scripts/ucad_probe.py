@@ -6,7 +6,7 @@ sbatch submissions differing only in their --export list:
     UCAD_DATASET      visa | mvtec                     (default visa)
     UCAD_EPOCHS       prompt-tuning epochs per concept (required)
     UCAD_BATCH_SIZE   training batch size              (required)
-    UCAD_CATEGORIES   comma-separated, empty = all     (default all)
+    UCAD_CATEGORIES   ';'-separated, empty = all       (default all; a comma would end sbatch --export)
     UCAD_MASKS_DIR    SAM masks root                   (default the dataset's masks env var)
     UCAD_REWEIGHTING  reweighting_num_nn, 0 = max      (default 0)
     UCAD_KNOWLEDGE    knowledge_size, one image = 196  (default 196)
@@ -56,7 +56,7 @@ CORESET_MODE = os.environ.get("UCAD_CORESET", "exact")
 RESIZE_MODE = os.environ.get("UCAD_RESIZE_MODE", "stretch")
 ENSEMBLE_EPOCHS = int(os.environ.get("UCAD_ENSEMBLE", "1"))
 SEED = int(os.environ.get("UCAD_SEED", "0"))
-CATEGORIES = [category for category in os.environ.get("UCAD_CATEGORIES", "").split(",") if category]
+CATEGORIES = [category for category in os.environ.get("UCAD_CATEGORIES", "").split(";") if category]
 OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_probe.json"))
 INPUT_SIZE = (224, 224)
 
