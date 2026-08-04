@@ -32,13 +32,15 @@ export VISA_ROOT=$BASE/data/visa
 export VISA_MASKS_ROOT=$BASE/data/visa-sam2
 export OMP_NUM_THREADS=4
 
-# Task 3 repeats the full run's configuration; 4 uses the reference implementation's batch size.
+# Tasks 0-4 sweep two categories: 3 repeats the full run's configuration, 4 uses the reference
+# implementation's batch size. Task 5 takes the sweep's best setting to all twelve categories.
 case $SLURM_ARRAY_TASK_ID in
     0) NAME=ep01_b08; export UCAD_EPOCHS=1;  export UCAD_BATCH_SIZE=8  ;;
     1) NAME=ep05_b08; export UCAD_EPOCHS=5;  export UCAD_BATCH_SIZE=8  ;;
     2) NAME=ep10_b08; export UCAD_EPOCHS=10; export UCAD_BATCH_SIZE=8  ;;
     3) NAME=ep25_b08; export UCAD_EPOCHS=25; export UCAD_BATCH_SIZE=8  ;;
     4) NAME=ep25_b24; export UCAD_EPOCHS=25; export UCAD_BATCH_SIZE=24 ;;
+    5) NAME=full_ep01_b08; export UCAD_EPOCHS=1; export UCAD_BATCH_SIZE=8; export UCAD_CATEGORIES= ;;
 esac
 
 export UCAD_OUTPUT=$RUN_DIR/$NAME.json

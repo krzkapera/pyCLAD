@@ -32,23 +32,24 @@ EPOCHS = int(os.environ["UCAD_EPOCHS"])
 BATCH_SIZE = int(os.environ["UCAD_BATCH_SIZE"])
 OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_visa_probe.json"))
 INPUT_SIZE = (224, 224)
-CATEGORIES = ["candle", "capsules"]
+# An empty UCAD_CATEGORIES probes the whole benchmark.
+CATEGORIES = [category for category in os.environ.get("UCAD_CATEGORIES", "candle,capsules").split(",") if category]
 
 
 def main():
-    logger.info("PROBE epochs=%d batch_size=%d categories=%s", EPOCHS, BATCH_SIZE, CATEGORIES)
+    logger.info("PROBE epochs=%d batch_size=%d categories=%s", EPOCHS, BATCH_SIZE, CATEGORIES or "all")
 
     dataset = read_vision_benchmark_dataset(
         root=VISA_ROOT,
         benchmark="visa_folder",
         dataset_name="VisA-probe",
-        categories=CATEGORIES,
+        categories=CATEGORIES or None,
         data_mode="paths",
         resize_to=INPUT_SIZE,
     )
 
     config = UCADConfig(
-        max_tasks=len(CATEGORIES),
+        max_tasks=len(dataset.train_concepts()),
         input_size=INPUT_SIZE,
         training_epochs=EPOCHS,
         batch_size=BATCH_SIZE,
