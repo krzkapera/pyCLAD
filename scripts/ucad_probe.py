@@ -10,6 +10,7 @@ sbatch submissions differing only in their --export list:
     UCAD_MASKS_DIR    SAM masks root                   (default the dataset's masks env var)
     UCAD_REWEIGHTING  reweighting_num_nn, 0 = max      (default 0)
     UCAD_KNOWLEDGE    knowledge_size, one image = 196  (default 196)
+    UCAD_PROMPT_LEN   prefix tokens per layer          (default 1; the reference uses 5)
     UCAD_CORESET      exact | approximate              (default exact)
     UCAD_SEED         prompt and data-loader seed      (default 0)
     UCAD_OUTPUT       JSON destination                 (default ./ucad_probe.json)
@@ -48,6 +49,7 @@ EPOCHS = int(os.environ["UCAD_EPOCHS"])
 BATCH_SIZE = int(os.environ["UCAD_BATCH_SIZE"])
 REWEIGHTING = int(os.environ.get("UCAD_REWEIGHTING", "0"))
 KNOWLEDGE_SIZE = int(os.environ.get("UCAD_KNOWLEDGE", "196"))
+PROMPT_LENGTH = int(os.environ.get("UCAD_PROMPT_LEN", "1"))
 CORESET_MODE = os.environ.get("UCAD_CORESET", "exact")
 SEED = int(os.environ.get("UCAD_SEED", "0"))
 CATEGORIES = [category for category in os.environ.get("UCAD_CATEGORIES", "").split(",") if category]
@@ -57,10 +59,10 @@ INPUT_SIZE = (224, 224)
 
 def main():
     logger.info(
-        "PROBE dataset=%s epochs=%d batch_size=%d reweighting=%d knowledge=%d coreset=%s seed=%d "
-        "masks=%s categories=%s",
-        DATASET, EPOCHS, BATCH_SIZE, REWEIGHTING, KNOWLEDGE_SIZE, CORESET_MODE, SEED, MASKS_DIR,
-        CATEGORIES or "all",
+        "PROBE dataset=%s epochs=%d batch_size=%d prompt_len=%d reweighting=%d knowledge=%d "
+        "coreset=%s seed=%d masks=%s categories=%s",
+        DATASET, EPOCHS, BATCH_SIZE, PROMPT_LENGTH, REWEIGHTING, KNOWLEDGE_SIZE, CORESET_MODE, SEED,
+        MASKS_DIR, CATEGORIES or "all",
     )
 
     dataset = read_vision_benchmark_dataset(
@@ -77,6 +79,7 @@ def main():
         input_size=INPUT_SIZE,
         training_epochs=EPOCHS,
         batch_size=BATCH_SIZE,
+        prompt_length=PROMPT_LENGTH,
         reweighting_num_nn=REWEIGHTING,
         knowledge_size=KNOWLEDGE_SIZE,
         coreset_mode=CORESET_MODE,
