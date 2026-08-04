@@ -22,8 +22,9 @@ cd "$BASE"
 RUN_DIR=$BASE/runs/probe_${UCAD_NAME}_${SLURM_JOB_ID}
 mkdir -p "$RUN_DIR"
 
-module load GCCcore/13.3.0
-module load Python/3.12.3
+# Athena names the module Python/3.12.3, Ares python/3.12.3-gcccore-13.3.0; the account and
+# partition come from the submission (Ares uses -A plglscclass26-gpu -p plgrid-gpu-v100).
+module load GCCcore/13.3.0 Python/3.12.3 2>/dev/null || module load python/3.12.3-gcccore-13.3.0
 
 export HF_HOME=$BASE/cache/hf
 export TORCH_HOME=$BASE/cache/torch
