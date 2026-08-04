@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List
 
@@ -12,6 +13,8 @@ from pyclad.metrics.continual.concepts_metric import (
     SummarizedMetric,
 )
 from pyclad.output.output_writer import InfoProvider
+
+logger = logging.getLogger(__name__)
 
 
 class ConceptMetricCallback(Callback, InfoProvider):
@@ -45,6 +48,13 @@ class ConceptMetricCallback(Callback, InfoProvider):
 
         metric_value = self._base_metric.compute(anomaly_scores=anomaly_scores, y_true=y_true, y_pred=y_pred)
         self._metric_matrix[self._learned_concepts[-1]][evaluated_concept.name] = metric_value
+        logger.info(
+            "%s after learning %s, evaluated on %s: %.4f",
+            self._base_metric.name(),
+            self._learned_concepts[-1],
+            evaluated_concept.name,
+            metric_value,
+        )
 
     def info(self) -> Dict[str, Any]:
         concept_level_matrix = self._transform_to_ordered_matrix(self._metric_matrix, self._learned_concepts)

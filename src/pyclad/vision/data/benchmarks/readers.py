@@ -338,6 +338,18 @@ class VisABenchmarkReader(CsvBenchmarkReader):
         super().__init__(root=root, name="visa", csv_path=csv_path)
 
 
+class VisAFolderBenchmarkReader(FolderBenchmarkReader):
+    """VisA redistributed in a per-category folder layout instead of the official split file.
+
+    Anomalous test images share a single ``test/bad`` directory and their masks are named after
+    the image in ``ground_truth/bad``, without MVTec's per-defect-type directories and ``_mask``
+    suffix.
+    """
+
+    def __init__(self, root: Union[str, Path]):
+        super().__init__(root=root, name="visa_folder", mask_suffix="")
+
+
 class DAGMBenchmarkReader(VisionBenchmarkReader):
     def __init__(self, root: Union[str, Path], include_anomalous_train: bool = False):
         super().__init__(root=root, name="dagm")
@@ -415,6 +427,7 @@ PREDEFINED_BENCHMARK_READERS: Dict[str, Callable[..., VisionBenchmarkReader]] = 
     "mpdd": MPDDBenchmarkReader,
     "mvtec": MVTecBenchmarkReader,
     "visa": VisABenchmarkReader,
+    "visa_folder": VisAFolderBenchmarkReader,
 }
 
 PREDEFINED_BENCHMARK_ALIASES = {
