@@ -1,9 +1,16 @@
-"""Probes how VisA results depend on the amount of prompt tuning.
+"""Runs one UCAD configuration over a benchmark and reports every concept-level metric.
 
-The paper's numbers come from a run that evaluates the test set after every epoch and
-reports the best one, on batches of 24 (scripts/../ucad-ref-run/args_dict.npy); the
-framework evaluates once, after the last epoch, on batches of 8. This sweeps epoch count
-and batch size over two categories to separate "too much prompt tuning" from "wrong batch".
+Everything the probe varies comes from the environment, so a batch of configurations is a batch of
+sbatch submissions differing only in their --export list:
+
+    UCAD_DATASET      visa | mvtec                     (default visa)
+    UCAD_EPOCHS       prompt-tuning epochs per concept (required)
+    UCAD_BATCH_SIZE   training batch size              (required)
+    UCAD_CATEGORIES   comma-separated, empty = all     (default all)
+    UCAD_MASKS_DIR    SAM masks root                   (default the dataset's masks env var)
+    UCAD_REWEIGHTING  reweighting_num_nn, 0 = max      (default 0)
+    UCAD_SEED         prompt and data-loader seed      (default 0)
+    UCAD_OUTPUT       JSON destination                 (default ./ucad_probe.json)
 """
 
 import logging
@@ -26,23 +33,34 @@ from pyclad.vision.models.ucad import UCADConfig, UCADModel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-VISA_ROOT = os.environ["VISA_ROOT"]
-VISA_MASKS_ROOT = os.environ.get("VISA_MASKS_ROOT")
+BENCHMARKS = {
+    "visa": ("VISA_ROOT", "VISA_MASKS_ROOT", "visa_folder"),
+    "mvtec": ("MVTEC_ROOT", "MVTEC_MASKS_ROOT", "mvtec"),
+}
+
+DATASET = os.environ.get("UCAD_DATASET", "visa")
+ROOT_VAR, MASKS_VAR, BENCHMARK = BENCHMARKS[DATASET]
+ROOT = os.environ[ROOT_VAR]
+MASKS_DIR = os.environ.get("UCAD_MASKS_DIR") or os.environ.get(MASKS_VAR)
 EPOCHS = int(os.environ["UCAD_EPOCHS"])
 BATCH_SIZE = int(os.environ["UCAD_BATCH_SIZE"])
-OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_visa_probe.json"))
+REWEIGHTING = int(os.environ.get("UCAD_REWEIGHTING", "0"))
+SEED = int(os.environ.get("UCAD_SEED", "0"))
+CATEGORIES = [category for category in os.environ.get("UCAD_CATEGORIES", "").split(",") if category]
+OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_probe.json"))
 INPUT_SIZE = (224, 224)
-# An empty UCAD_CATEGORIES probes the whole benchmark.
-CATEGORIES = [category for category in os.environ.get("UCAD_CATEGORIES", "candle,capsules").split(",") if category]
 
 
 def main():
-    logger.info("PROBE epochs=%d batch_size=%d categories=%s", EPOCHS, BATCH_SIZE, CATEGORIES or "all")
+    logger.info(
+        "PROBE dataset=%s epochs=%d batch_size=%d reweighting=%d seed=%d masks=%s categories=%s",
+        DATASET, EPOCHS, BATCH_SIZE, REWEIGHTING, SEED, MASKS_DIR, CATEGORIES or "all",
+    )
 
     dataset = read_vision_benchmark_dataset(
-        root=VISA_ROOT,
-        benchmark="visa_folder",
-        dataset_name="VisA-probe",
+        root=ROOT,
+        benchmark=BENCHMARK,
+        dataset_name=f"{DATASET}-probe",
         categories=CATEGORIES or None,
         data_mode="paths",
         resize_to=INPUT_SIZE,
@@ -53,8 +71,10 @@ def main():
         input_size=INPUT_SIZE,
         training_epochs=EPOCHS,
         batch_size=BATCH_SIZE,
-        sam_masks_dir=VISA_MASKS_ROOT,
-        sam_images_root=VISA_ROOT if VISA_MASKS_ROOT else None,
+        reweighting_num_nn=REWEIGHTING,
+        seed=SEED,
+        sam_masks_dir=MASKS_DIR,
+        sam_images_root=ROOT if MASKS_DIR else None,
     )
     model = UCADModel(config)
     strategy = NaiveStrategy(model)
