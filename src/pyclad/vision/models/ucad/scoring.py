@@ -59,3 +59,22 @@ class NearestNeighborScorer:
             anomaly_maps[i] = gaussian_filter(anomaly_maps[i], sigma=self.blur_sigma)
 
         return anomaly_maps
+
+
+def combine_members(member_scores: list[np.ndarray], member_maps: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    """Averages several scorers over one evaluation set, each min-max normalized over that set first.
+
+    Members produced by different prompts live on different scales, so they are comparable only after
+    normalization; the reference implementation normalizes the same way. Normalizing over the whole
+    evaluation set makes the result transductive in the scores, though it uses no labels.
+    """
+    if len(member_scores) == 1:
+        return member_scores[0], member_maps[0]
+
+    def normalized(values: np.ndarray) -> np.ndarray:
+        low, high = values.min(), values.max()
+        return np.zeros_like(values) if high == low else (values - low) / (high - low)
+
+    scores = np.mean([normalized(scores) for scores in member_scores], axis=0)
+    maps = np.mean([normalized(maps) for maps in member_maps], axis=0)
+    return scores, maps

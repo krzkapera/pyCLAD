@@ -1,14 +1,21 @@
 import torch
 from dataclasses import dataclass
-from typing import List
+from typing import List, Sequence, Tuple
+
+
+@dataclass
+class TaskState:
+    """One scorer for a concept: a prompt and the knowledge bank extracted under it."""
+
+    prompt_state: torch.Tensor
+    knowledge: torch.Tensor
 
 
 @dataclass
 class TaskMemory:
     task_id: int
     key: torch.Tensor
-    prompt_state: torch.Tensor
-    knowledge: torch.Tensor
+    states: List[TaskState]
 
 
 class TaskMemoryBank:
@@ -20,19 +27,22 @@ class TaskMemoryBank:
         self,
         task_id: int,
         key: torch.Tensor,
-        prompt_state: torch.Tensor,
-        knowledge: torch.Tensor,
+        states: Sequence[Tuple[torch.Tensor, torch.Tensor]],
     ):
         if len(self.tasks) >= self.max_tasks:
             raise RuntimeError(f"Memory bank full. Cannot exceed {self.max_tasks} tasks.")
+        if not states:
+            raise ValueError("A task needs at least one prompt/knowledge state")
 
-        memory = TaskMemory(
-            task_id=task_id,
-            key=key.cpu(),
-            prompt_state=prompt_state.cpu(),
-            knowledge=knowledge.cpu(),
+        self.tasks.append(
+            TaskMemory(
+                task_id=task_id,
+                key=key.cpu(),
+                states=[
+                    TaskState(prompt_state=prompt.cpu(), knowledge=knowledge.cpu()) for prompt, knowledge in states
+                ],
+            )
         )
-        self.tasks.append(memory)
 
     def task_distances(self, query_features: torch.Tensor) -> torch.Tensor:
         B, Np, C = query_features.shape
@@ -49,11 +59,8 @@ class TaskMemoryBank:
     def select_tasks(self, query_features: torch.Tensor) -> torch.Tensor:
         return self.task_distances(query_features).argmin(dim=1)
 
-    def get_prompt_state(self, task_idx: int) -> torch.Tensor:
-        return self.tasks[task_idx].prompt_state
-
-    def get_knowledge(self, task_idx: int) -> torch.Tensor:
-        return self.tasks[task_idx].knowledge
+    def get_states(self, task_idx: int) -> List[TaskState]:
+        return self.tasks[task_idx].states
 
     @property
     def num_tasks(self) -> int:

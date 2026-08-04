@@ -60,6 +60,14 @@ class UCADConfig(BaseModel):
         default=1024, description="Aggregated feature dimension (used when patchsize > 1)"
     )
 
+    score_ensemble_epochs: int = Field(
+        default=1,
+        description="How many of the last training epochs contribute a prompt/knowledge pair to the concept's "
+        "score: 1 evaluates the final epoch alone, higher values average the normalized scores of that many "
+        "epochs, as the reference implementation does (it additionally picks the best epoch by test AUROC, "
+        "which this does not)",
+    )
+
     # Training settings
     training_epochs: int = Field(default=25, description="Number of training epochs per concept")
     learning_rate: float = Field(default=5e-4, description="Learning rate for prompt tuning")

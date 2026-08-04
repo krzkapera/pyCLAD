@@ -13,6 +13,7 @@ sbatch submissions differing only in their --export list:
     UCAD_PROMPT_LEN   prefix tokens per layer          (default 1; the reference uses 5)
     UCAD_CORESET      exact | approximate              (default exact)
     UCAD_RESIZE_MODE  stretch | short_side_crop        (default stretch; the reference crops)
+    UCAD_ENSEMBLE     last epochs averaged into a score (default 1)
     UCAD_SEED         prompt and data-loader seed      (default 0)
     UCAD_OUTPUT       JSON destination                 (default ./ucad_probe.json)
 """
@@ -53,6 +54,7 @@ KNOWLEDGE_SIZE = int(os.environ.get("UCAD_KNOWLEDGE", "196"))
 PROMPT_LENGTH = int(os.environ.get("UCAD_PROMPT_LEN", "1"))
 CORESET_MODE = os.environ.get("UCAD_CORESET", "exact")
 RESIZE_MODE = os.environ.get("UCAD_RESIZE_MODE", "stretch")
+ENSEMBLE_EPOCHS = int(os.environ.get("UCAD_ENSEMBLE", "1"))
 SEED = int(os.environ.get("UCAD_SEED", "0"))
 CATEGORIES = [category for category in os.environ.get("UCAD_CATEGORIES", "").split(",") if category]
 OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_probe.json"))
@@ -62,9 +64,9 @@ INPUT_SIZE = (224, 224)
 def main():
     logger.info(
         "PROBE dataset=%s epochs=%d batch_size=%d prompt_len=%d reweighting=%d knowledge=%d "
-        "coreset=%s resize=%s seed=%d masks=%s categories=%s",
+        "coreset=%s resize=%s ensemble=%d seed=%d masks=%s categories=%s",
         DATASET, EPOCHS, BATCH_SIZE, PROMPT_LENGTH, REWEIGHTING, KNOWLEDGE_SIZE, CORESET_MODE,
-        RESIZE_MODE, SEED, MASKS_DIR, CATEGORIES or "all",
+        RESIZE_MODE, ENSEMBLE_EPOCHS, SEED, MASKS_DIR, CATEGORIES or "all",
     )
 
     dataset = read_vision_benchmark_dataset(
@@ -87,6 +89,7 @@ def main():
         reweighting_num_nn=REWEIGHTING,
         knowledge_size=KNOWLEDGE_SIZE,
         coreset_mode=CORESET_MODE,
+        score_ensemble_epochs=ENSEMBLE_EPOCHS,
         seed=SEED,
         sam_masks_dir=MASKS_DIR,
         sam_images_root=ROOT if MASKS_DIR else None,
