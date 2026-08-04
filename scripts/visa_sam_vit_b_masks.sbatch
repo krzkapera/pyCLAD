@@ -27,6 +27,7 @@ export HF_HOME=$BASE/cache/hf
 export TORCH_HOME=$BASE/cache/torch
 export XDG_CACHE_HOME=$BASE/cache/xdg
 export TMPDIR=$BASE/cache/tmp
+export PYTHONPATH=$BASE/ucad-ref-run
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=4
 
