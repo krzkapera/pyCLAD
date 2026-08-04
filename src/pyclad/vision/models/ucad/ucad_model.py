@@ -130,7 +130,7 @@ class UCADModel(VisionModel):
         optimizer = optim.Adam(self.backbone.prompt_module.parameters(), lr=self.config.learning_rate)
 
         self.backbone.train()
-        first_snapshot_epoch = max(self.config.training_epochs - self.config.score_ensemble_epochs, 0)
+        snapshot_epochs = self._snapshot_epochs()
         states: list[tuple[torch.Tensor, torch.Tensor]] = []
 
         for epoch in range(self.config.training_epochs):
@@ -156,7 +156,7 @@ class UCADModel(VisionModel):
 
             logger.info(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}")
 
-            if epoch >= first_snapshot_epoch:
+            if epoch + 1 in snapshot_epochs:
                 states.append(self._snapshot_state(extraction_loader, C))
                 self.backbone.train()
 
@@ -167,6 +167,18 @@ class UCADModel(VisionModel):
 
         logger.info(f"Task {self.current_task_id} added to memory bank.")
         self.current_task_id += 1
+
+    def _snapshot_epochs(self) -> set[int]:
+        """Which epochs (1-based) contribute a scorer, spread over training and always ending on the last.
+
+        The reference ensembles every epoch, so its members span the whole trajectory - including the early
+        epochs, which score better than the late ones. Taking only a trailing window would ensemble states that
+        are both correlated and already degraded.
+        """
+        epochs, members = self.config.training_epochs, self.config.score_ensemble_epochs
+        if members >= epochs:
+            return set(range(1, epochs + 1))
+        return {round(epochs / members * (index + 1)) for index in range(members)}
 
     def _snapshot_state(self, extraction_loader: DataLoader, dimension: int) -> tuple[torch.Tensor, torch.Tensor]:
         """The current prompt together with the knowledge bank it produces."""
