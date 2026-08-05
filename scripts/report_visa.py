@@ -2,8 +2,10 @@
 
 Usage: report_visa.py <run.json> [<run.json> ...]
 
-Reference values are the 'Ours' rows of Tables 3 and 4 in Liu et al., "Unsupervised Continual
-Anomaly Detection with Contrastively-learned Prompt" (AAAI 2024).
+Paper values are the 'Ours' rows of Tables 3 and 4 in Liu et al., "Unsupervised Continual Anomaly
+Detection with Contrastively-learned Prompt" (AAAI 2024). The reference column is that paper's own
+implementation run over the same VisA copy and masks, so the delta against it isolates our
+implementation from the dataset and the mask source.
 """
 
 import json
@@ -21,6 +23,20 @@ PAPER_PIXEL_AUPR = {
     "fryum": 0.334, "macaroni1": 0.013, "macaroni2": 0.003, "pcb1": 0.702,
     "pcb2": 0.136, "pcb3": 0.266, "pcb4": 0.106, "pipe_fryum": 0.457,
 }
+# The authors' code run over our VisA copy and SAM2-derived masks (Ares job 20847574).
+REFERENCE_IMAGE_AUROC = {
+    "candle": 0.7125, "capsules": 0.8970, "cashew": 0.9440, "chewinggum": 0.9485,
+    "fryum": 0.9470, "macaroni1": 0.8120, "macaroni2": 0.5545, "pcb1": 0.9820,
+    "pcb2": 0.9415, "pcb3": 0.7720, "pcb4": 0.9395, "pipe_fryum": 0.9870,
+}
+REFERENCE_PIXEL_AUPR = {
+    "candle": 0.0921, "capsules": 0.5396, "cashew": 0.5565, "chewinggum": 0.4060,
+    "fryum": 0.3335, "macaroni1": 0.0107, "macaroni2": 0.0082, "pcb1": 0.7652,
+    "pcb2": 0.1779, "pcb3": 0.2372, "pcb4": 0.2051, "pipe_fryum": 0.5958,
+}
+REFERENCE_AVERAGE_IMAGE_AUROC = 0.8698
+REFERENCE_AVERAGE_PIXEL_AUPR = 0.3273
+
 PAPER_AVERAGE_IMAGE_AUROC = 0.874
 PAPER_AVERAGE_PIXEL_AUPR = 0.300
 PAPER_FM_IMAGE = 0.039
@@ -52,24 +68,32 @@ def report(path: Path) -> None:
     final = order[-1]
 
     print(f"== {path.name}")
-    print(f"{'class':<12} {'img AUROC':>10} {'paper':>7} {'diff':>7}   {'pix AUPR':>9} {'paper':>7} {'diff':>7}")
+    header = (
+        f"{'class':<12} {'img AUROC':>10} {'paper':>7} {'vs paper':>9} {'ref':>7} {'vs ref':>8}   "
+        f"{'pix AUPR':>9} {'paper':>7} {'vs paper':>9} {'ref':>7} {'vs ref':>8}"
+    )
+    print(header)
     for concept in order:
         ours_image = image["metric_matrix"][final][concept]
         ours_pixel = pixel["metric_matrix"][final][concept] if pixel else float("nan")
         print(
             f"{concept:<12} {ours_image:10.4f} {PAPER_IMAGE_AUROC[concept]:7.3f} "
-            f"{ours_image - PAPER_IMAGE_AUROC[concept]:+7.3f}   "
+            f"{ours_image - PAPER_IMAGE_AUROC[concept]:+9.3f} {REFERENCE_IMAGE_AUROC[concept]:7.3f} "
+            f"{ours_image - REFERENCE_IMAGE_AUROC[concept]:+8.3f}   "
             f"{ours_pixel:9.4f} {PAPER_PIXEL_AUPR[concept]:7.3f} "
-            f"{ours_pixel - PAPER_PIXEL_AUPR[concept]:+7.3f}"
+            f"{ours_pixel - PAPER_PIXEL_AUPR[concept]:+9.3f} {REFERENCE_PIXEL_AUPR[concept]:7.3f} "
+            f"{ours_pixel - REFERENCE_PIXEL_AUPR[concept]:+8.3f}"
         )
 
     average_image = sum(image["metric_matrix"][final].values()) / len(order)
     average_pixel = sum(pixel["metric_matrix"][final].values()) / len(order) if pixel else float("nan")
     print(
         f"{'AVERAGE':<12} {average_image:10.4f} {PAPER_AVERAGE_IMAGE_AUROC:7.3f} "
-        f"{average_image - PAPER_AVERAGE_IMAGE_AUROC:+7.3f}   "
+        f"{average_image - PAPER_AVERAGE_IMAGE_AUROC:+9.3f} {REFERENCE_AVERAGE_IMAGE_AUROC:7.3f} "
+        f"{average_image - REFERENCE_AVERAGE_IMAGE_AUROC:+8.3f}   "
         f"{average_pixel:9.4f} {PAPER_AVERAGE_PIXEL_AUPR:7.3f} "
-        f"{average_pixel - PAPER_AVERAGE_PIXEL_AUPR:+7.3f}"
+        f"{average_pixel - PAPER_AVERAGE_PIXEL_AUPR:+9.3f} {REFERENCE_AVERAGE_PIXEL_AUPR:7.3f} "
+        f"{average_pixel - REFERENCE_AVERAGE_PIXEL_AUPR:+8.3f}"
     )
 
     print(
