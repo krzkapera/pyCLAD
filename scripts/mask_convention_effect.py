@@ -9,7 +9,8 @@ pyCLAD resizes a mask with nearest-neighbour interpolation and keeps every non-z
 positive set includes the boundary. The reference resizes bilinearly and then casts the tensor to
 int32, which truncates every fractional pixel to zero and keeps only the mask's interior. Pixel AUPR
 depends on the size of that positive set, so this reports both conventions side by side: the positive
-rate each produces and, on identical score maps, the AUPR each yields.
+rate each produces and, on identical score maps, the AUPR each yields. Both use the geometry the run
+itself used - comparing a stretched mask against cropped maps measures misalignment, not thresholding.
 """
 
 import logging
@@ -21,6 +22,7 @@ from PIL import Image
 from sklearn.metrics import average_precision_score
 
 from pyclad.vision.data.benchmarks.readers import index_vision_benchmark
+from pyclad.vision.data.geometry import resize_image
 from pyclad.vision.models.ucad import UCADConfig, UCADModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -34,12 +36,14 @@ DATASET = os.environ.get("UCAD_DATASET", "visa")
 ROOT_VAR, MASKS_VAR, BENCHMARK = BENCHMARKS[DATASET]
 CATEGORIES = [c for c in os.environ.get("UCAD_CATEGORIES", "candle;capsules;cashew").split(";") if c]
 INPUT_SIZE = (224, 224)
+# Both conventions must share the run's geometry, or the comparison measures misalignment instead.
+RESIZE_MODE = os.environ.get("UCAD_RESIZE_MODE", "short_side_crop")
 
 
 def pyclad_labels(mask_path) -> np.ndarray:
-    """Nearest-neighbour resize, every non-zero pixel positive."""
+    """Nearest-neighbour resize under the run's geometry, every non-zero pixel positive."""
     with Image.open(mask_path) as mask:
-        resized = mask.convert("L").resize(INPUT_SIZE[::-1], Image.Resampling.NEAREST)
+        resized = resize_image(mask.convert("L"), INPUT_SIZE, RESIZE_MODE, Image.Resampling.NEAREST)
     return (np.asarray(resized) > 0).astype(np.uint8)
 
 
@@ -60,7 +64,7 @@ def main():
     config = UCADConfig(
         max_tasks=1,
         input_size=INPUT_SIZE,
-        resize_mode="short_side_crop",
+        resize_mode=RESIZE_MODE,
         training_epochs=1,
         sam_masks_dir=os.environ.get(MASKS_VAR),
         sam_images_root=os.environ[ROOT_VAR],
