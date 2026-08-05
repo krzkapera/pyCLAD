@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=32G
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm-%j.out
@@ -37,7 +37,7 @@ export MVTEC_ROOT=$BASE/data/mvtec2d
 export MVTEC_MASKS_ROOT=$BASE/data/mvtec2d-sam-b
 export VISA_ROOT=$BASE/data/visa
 export VISA_MASKS_ROOT=$BASE/data/visa-sam2
-export OMP_NUM_THREADS=4
+export OMP_NUM_THREADS=2
 export UCAD_OUTPUT=$RUN_DIR/${UCAD_NAME}.json
 
 $BASE/.venv/bin/python $BASE/code/pyCLAD/scripts/ucad_probe.py 2>&1 |
