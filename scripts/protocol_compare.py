@@ -1,0 +1,112 @@
+"""Scores one configuration under both evaluation protocols.
+
+Usage: protocol_compare.py      (configured through the environment, see ucad_probe.py)
+
+The reference evaluates the test set after every epoch, averages the min-max normalized scores of
+every epoch so far, and keeps the epoch whose image AUROC on that cumulative ensemble is highest. Two
+numbers therefore live inside one training run: the cumulative ensemble after the last epoch, which
+uses no test labels, and its maximum over epochs, which does. This reports both per concept.
+
+Each epoch's state scores the test set once; the cumulative averages are then formed on the stored
+maps, so the cost is one evaluation per epoch rather than one per (epoch, prefix) pair.
+"""
+
+import logging
+import os
+
+import numpy as np
+from sklearn.metrics import average_precision_score, roc_auc_score
+
+from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
+from pyclad.vision.models.ucad import UCADConfig, UCADModel
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+BENCHMARKS = {
+    "visa": ("VISA_ROOT", "VISA_MASKS_ROOT", "visa_folder"),
+    "mvtec": ("MVTEC_ROOT", "MVTEC_MASKS_ROOT", "mvtec"),
+}
+DATASET = os.environ.get("UCAD_DATASET", "visa")
+ROOT_VAR, MASKS_VAR, BENCHMARK = BENCHMARKS[DATASET]
+ROOT = os.environ[ROOT_VAR]
+EPOCHS = int(os.environ.get("UCAD_EPOCHS", "25"))
+BATCH_SIZE = int(os.environ.get("UCAD_BATCH_SIZE", "24"))
+CORESET_MODE = os.environ.get("UCAD_CORESET", "approximate")
+RESIZE_MODE = os.environ.get("UCAD_RESIZE_MODE", "short_side_crop")
+BLUR_SIGMA = float(os.environ.get("UCAD_BLUR", "4.0"))
+SEED = int(os.environ.get("UCAD_SEED", "0"))
+CATEGORIES = [c for c in os.environ.get("UCAD_CATEGORIES", "").split(";") if c]
+INPUT_SIZE = (224, 224)
+
+
+def normalized(values: np.ndarray) -> np.ndarray:
+    """Min-max over the whole test set, as the reference normalizes each epoch's output."""
+    flat = values.reshape(len(values), -1)
+    low = flat.min(axis=1).reshape(-1, *([1] * (values.ndim - 1)))
+    high = flat.max(axis=1).reshape(-1, *([1] * (values.ndim - 1)))
+    return (values - low) / np.maximum(high - low, 1e-12)
+
+
+def member_outputs(model: UCADModel, concept) -> tuple[np.ndarray, np.ndarray]:
+    """Normalized scores and maps of every stored epoch, shaped (epochs, images[, H, W])."""
+    states = model.memory.get_states(model.memory.num_tasks - 1)
+    scores, maps = [], []
+    for state in states:
+        model.memory.tasks[-1].states = [state]
+        try:
+            results = model.predict(concept.data)
+        finally:
+            model.memory.tasks[-1].states = states
+        scores.append(results.anomaly_scores)
+        maps.append(results.score_maps)
+
+    return normalized(np.stack(scores)), normalized(np.stack(maps))
+
+
+def main():
+    dataset = read_vision_benchmark_dataset(
+        root=ROOT,
+        benchmark=BENCHMARK,
+        categories=CATEGORIES or None,
+        data_mode="paths",
+        resize_to=INPUT_SIZE,
+        resize_mode=RESIZE_MODE,
+    )
+
+    for train_concept, test_concept in zip(dataset.train_concepts(), dataset.test_concepts()):
+        config = UCADConfig(
+            max_tasks=1,
+            input_size=INPUT_SIZE,
+            resize_mode=RESIZE_MODE,
+            training_epochs=EPOCHS,
+            batch_size=BATCH_SIZE,
+            coreset_mode=CORESET_MODE,
+            blur_sigma=BLUR_SIGMA,
+            score_ensemble_epochs=EPOCHS,
+            seed=SEED,
+            sam_masks_dir=os.environ.get(MASKS_VAR),
+            sam_images_root=ROOT,
+        )
+        model = UCADModel(config)
+        model.fit(train_concept.data)
+
+        scores, maps = member_outputs(model, test_concept)
+        truth = test_concept.masks.reshape(-1)
+
+        images, pixels = [], []
+        for epochs in range(1, EPOCHS + 1):
+            images.append(float(roc_auc_score(test_concept.labels, scores[:epochs].mean(axis=0))))
+            pixels.append(float(average_precision_score(truth, maps[:epochs].mean(axis=0).reshape(-1))))
+
+        best = int(np.argmax(images))
+        logger.info(
+            "PROTOCOL %s honest_image=%.4f honest_pixel=%.4f | selected_epoch=%d selected_image=%.4f "
+            "selected_pixel=%.4f | selection_gain=%.4f",
+            test_concept.name, images[-1], pixels[-1], best + 1, images[best], pixels[best],
+            images[best] - images[-1],
+        )
+
+
+if __name__ == "__main__":
+    main()
