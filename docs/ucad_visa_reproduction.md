@@ -20,9 +20,8 @@ reproduction; what differs is the evaluation protocol.
 | **pyCLAD, reference-identical configuration** | **0.8528 +- 0.005** | **0.3756 +- 0.002** | **196** | **ensemble over 25 epochs, no test labels used** |
 | pyCLAD before the fixes | 0.7189 | 0.2295 | 196 | one model, last epoch |
 
-**VisA is reproduced**, three seeds at the reference's own configuration, and forgetting stays at
-0.0000. The comparison that settles what the remaining difference is appears in the next section: the
-reference's number and pyCLAD's are separated by its epoch selection, not by the method.
+Forgetting stays at 0.0000. The pyCLAD row above was run at batch 24, which turned out not to be the
+reference's batch size; the corrected comparison is two sections down.
 
 An earlier estimate put that selection at about +0.106 image AUROC, measured against an average
 epoch. Measured the way the reference actually uses it - against the same run's cumulative ensemble -
@@ -36,8 +35,10 @@ the changes gives 0.9185 / 0.4727, matching earlier sessions. A 25-epoch ensembl
 
 One training run holds two numbers: the cumulative ensemble after the last epoch, which uses no test
 labels, and its maximum over epochs, which the reference reports. Measured for both implementations
-at the reference's own configuration (crop, batch 24, 25 epochs, approximate coreset, sigma 4, bank
-196), VisA, 12-category average, image AUROC / pixel AUPR:
+at what was believed to be the reference's own configuration - crop, **batch 24**, 25 epochs,
+approximate coreset, sigma 4, bank 196 - VisA, 12-category average, image AUROC / pixel AUPR. The
+next section shows the batch size was wrong, so this table compares two different configurations and
+is kept only because the protocol arithmetic in it still holds:
 
 | | pyCLAD | reference | paper |
 |---|---|---|---|
@@ -45,19 +46,54 @@ at the reference's own configuration (crop, batch 24, 25 epochs, approximate cor
 | reference protocol, epoch chosen on the test set | 0.8610 / 0.3690 | **0.8723 +- 0.0026** / 0.3269 +- 0.0042 | 0.874 / 0.300 |
 | what the selection is worth | +0.0105 image | +0.0436 image | - |
 
-Three seeds per column, except pyCLAD's selected row which is one. **With the leakage removed pyCLAD
-is ahead by 0.0241 +- 0.0036 image AUROC** - 6.6 standard errors, so the difference is real - **and by
-0.048 pixel AUPR.** Under the reference's own protocol the ordering flips and the reference is 0.011
-ahead on image, because selection buys it four times more. Its honest average, 0.8287, is 0.045 below
-the published 0.874, so the paper's VisA figure rests substantially on the selection mechanism rather
-than on the method.
+Three seeds per column, except pyCLAD's selected row which is one. The 0.0241 image-AUROC difference
+here is a batch-size difference and not an implementation one, so it says nothing about the two
+implementations; what does survive is the protocol arithmetic. The reference's honest average,
+0.8287, is 0.045 below the published 0.874, and selection is worth +0.0436 to it against +0.0105 to
+pyCLAD, so **the paper's VisA figure rests substantially on the selection mechanism rather than on the
+method** - and that conclusion is internal to the reference's own runs.
 
 Roughly half of the pixel advantage is a metric convention rather than model quality. pyCLAD
 resamples the ground-truth mask with nearest-neighbour and counts every nonzero pixel; the reference
 resamples bilinearly and truncates to int. Ours yields 1.1-1.5x more positive pixels and about +0.022
 AUPR on the identical predictions. The remaining ~0.026 is the model.
 
-## Where the image-AUROC difference actually is
+## The difference was the batch size
+
+The comparison above is not what it says it is. The reference's training batch size is the click
+default in its own entry point:
+
+```python
+@click.option("--batch_size", default=8, type=int, show_default=True)   # run_ucad.py:670
+```
+
+and its launch command never overrides it, so it trains with **batch 8**, not the 24 taken here from
+`args_dict.npy` - the same file that earlier suggested `prompt_length=5` and does not feed the data
+loader either. Over 980 training images that is 123 optimizer steps per epoch against 41: the
+reference's prompt drifts three times faster per epoch.
+
+The per-epoch trajectories show it directly. Cumulative ensemble on candle, image AUROC:
+
+| | epoch 1 | 5 | 10 | 15 | 20 | 25 |
+|---|---|---|---|---|---|---|
+| reference, three seeds | 0.627 / 0.787 / 0.666 | 0.660 / 0.658 / 0.664 | 0.604 / 0.637 / 0.599 | 0.582 / 0.602 / 0.503 | 0.509 / 0.524 / 0.410 | 0.485 / 0.468 / 0.352 |
+| pyCLAD at batch 24 | 0.705 / 0.613 / 0.642 | 0.577 / 0.541 / 0.661 | 0.558 / 0.607 / 0.730 | 0.557 / 0.625 / 0.721 | 0.566 / 0.637 / 0.651 | 0.584 / 0.628 / 0.626 |
+
+The reference decays monotonically in all three seeds; pyCLAD at batch 24 is flat. Epoch 1 agrees
+(0.6935 +- 0.0833 against 0.6528 +- 0.0470), which puts feature extraction and scoring beyond
+suspicion and locates the divergence in the training step alone.
+
+At batch 8, with the reference's own supervision, both problem categories reproduce:
+
+| VisA category, honest protocol | pyCLAD batch 24 | pyCLAD batch 8 | reference | difference |
+|---|---|---|---|---|
+| candle | 0.6293 +- 0.0106 | 0.4870 +- 0.0390 | 0.4352 +- 0.0721 | +0.052 +- 0.047 (1.1 sd) |
+| macaroni1 | 0.7395 +- 0.0078 | 0.6978 +- 0.0471 | 0.6633 +- 0.0316 | +0.035 +- 0.033 (1.1 sd) |
+
+Three seeds each. The 0.209 and 0.058 gaps of the previous section were a batch-size difference, not
+an implementation difference; the full twelve-category comparison at batch 8 is running.
+
+## Where the image-AUROC difference was (batch 24, superseded)
 
 It is not spread across the benchmark. Per category, honest protocol, three seeds on each side:
 
@@ -78,20 +114,19 @@ It is not spread across the benchmark. Per category, honest protocol, three seed
 
 Over the ten categories other than candle and macaroni1 the two implementations differ by +0.0022 on
 average - they agree. The whole difference is the two categories where prompt tuning diverges, and
-there pyCLAD is damaged less by the same failure: candle scores 0.787 with no training at all, so at
-0.6442 pyCLAD has lost 0.14 of it and the reference at 0.4352 has lost 0.35.
+there pyCLAD took three times fewer optimizer steps per epoch, so it had drifted less far by the
+twenty-fifth.
 
-That also explains why the ordering flips under the reference's protocol. Epoch selection is a repair
-mechanism for exactly this divergence - on candle it lifts the reference from 0.4352 to 0.7325 - and
-the implementation with more damage has more to recover. pyCLAD is not better at the method; it is
-less destabilised by it, which is worth more honestly than it is under selection.
+That also explains why the ordering flipped under the reference's protocol. Epoch selection is a
+repair mechanism for exactly this divergence - on candle it lifts the reference from 0.4352 to 0.7325
+- and the run that has drifted further has more to recover.
 
-Of the mechanisms that could produce a different degree of divergence, only the mask-resampling path
-has any measured support: giving pyCLAD the reference's own 14x14 label maps moves candle from 0.6442
-to 0.5815, a third of the way to the reference, while raising the 12-category average to 0.8606. That
-is one seed against candle's +-0.04 spread, so it is a lead, not a result. Optimizer (Adam), learning
-rate (5e-4), schedule (constant), weight decay (0), gradient clip (1.0), prompt shape and prompt
-initialisation (uniform -1..1) are identical on both sides.
+Two mechanisms were tested and cleared before the batch size was found. Giving pyCLAD the reference's
+own 14x14 label maps leaves candle at 0.6172 +- 0.0665 against the base run's 0.6293 +- 0.0106, and
+its mask source at 0.6298 +- 0.0471, three seeds each: the SCL supervision is not what separates the
+implementations. A line-by-line trace of both pipelines - input transform, prefix tuning, feature
+layer, patch aggregation, loss, optimizer, coreset, scorer, map rescaling, ensembling - found them
+equivalent at every step.
 
 ## The configuration these numbers come from
 
