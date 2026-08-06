@@ -30,6 +30,7 @@ BENCHMARKS = {
 DATASET = os.environ.get("UCAD_DATASET", "visa")
 ROOT_VAR, MASKS_VAR, BENCHMARK = BENCHMARKS[DATASET]
 ROOT = os.environ[ROOT_VAR]
+MASKS_DIR = os.environ.get("UCAD_MASKS_DIR") or os.environ[MASKS_VAR]
 EPOCHS = int(os.environ.get("UCAD_EPOCHS", "25"))
 BATCH_SIZE = int(os.environ.get("UCAD_BATCH_SIZE", "24"))
 CORESET_MODE = os.environ.get("UCAD_CORESET", "approximate")
@@ -65,6 +66,13 @@ def member_outputs(model: UCADModel, concept) -> tuple[np.ndarray, np.ndarray]:
 
 
 def main():
+    logger.info(
+        "PROTOCOL_CONFIG dataset=%s epochs=%d batch_size=%d coreset=%s resize=%s blur=%.1f seed=%d "
+        "masks=%s categories=%s",
+        DATASET, EPOCHS, BATCH_SIZE, CORESET_MODE, RESIZE_MODE, BLUR_SIGMA, SEED, MASKS_DIR,
+        CATEGORIES or "all",
+    )
+
     dataset = read_vision_benchmark_dataset(
         root=ROOT,
         benchmark=BENCHMARK,
@@ -85,7 +93,7 @@ def main():
             blur_sigma=BLUR_SIGMA,
             score_ensemble_epochs=EPOCHS,
             seed=SEED,
-            sam_masks_dir=os.environ.get(MASKS_VAR),
+            sam_masks_dir=MASKS_DIR,
             sam_images_root=ROOT,
         )
         model = UCADModel(config)

@@ -93,6 +93,29 @@ is one seed against candle's +-0.04 spread, so it is a lead, not a result. Optim
 rate (5e-4), schedule (constant), weight decay (0), gradient clip (1.0), prompt shape and prompt
 initialisation (uniform -1..1) are identical on both sides.
 
+## The configuration these numbers come from
+
+Recorded so the better result can be reproduced before anything is changed on purpose. Everything in
+the first block is set to the reference's value; the second block is where pyCLAD's library defaults
+still differ, deliberately, because the reproduction is not closed yet.
+
+| | value | pyCLAD default |
+|---|---|---|
+| `input_size` / `resize_mode` | (224, 224) / `short_side_crop` | `stretch` |
+| `training_epochs` / `batch_size` | 25 / 24 | 25 / 8 |
+| `score_ensemble_epochs` | 25 | 1 |
+| `coreset_mode` | `approximate` | `exact` |
+| `knowledge_size` / `key_size` | 196 / 196 | same |
+| `blur_sigma` | 4.0 | 3.0 |
+| `prompt_length` / `num_prompt_layers` / `feature_layer` | 1 / 12 / 5 | same |
+| `scl_temperature` / lr / grad clip / optimizer | 0.5 / 5e-4 / 1.0 / Adam | same |
+| `reweighting_num_nn` | 0 | same |
+| SCL masks | `visa-sam2`, SAM2 hiera-small at full resolution | - |
+| seeds | 0, 1, 2 | - |
+
+Run as `scripts/ucad_probe.py` (single number per concept) or `scripts/protocol_compare.py` (both
+protocols from one run); `scripts/protocol_compare.sbatch` submits either cluster.
+
 ## What turned out to be inside the noise
 
 Three effects reported earlier as real did not survive replication across seeds, and are retracted:
