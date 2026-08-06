@@ -15,7 +15,7 @@ reproduction; what differs is the evaluation protocol.
 
 | | image AUROC | pixel AUPR | knowledge | protocol |
 |---|---|---|---|---|
-| reference | 0.8698 | 0.3273 | 196 | ensemble over 25 epochs + epoch chosen on the test set |
+| reference | 0.8723 +- 0.0026 | 0.3269 +- 0.0042 | 196 | ensemble over 25 epochs + epoch chosen on the test set |
 | paper | 0.874 | 0.300 | 196 | as above |
 | **pyCLAD, reference-identical configuration** | **0.8528 +- 0.005** | **0.3756 +- 0.002** | **196** | **ensemble over 25 epochs, no test labels used** |
 | pyCLAD before the fixes | 0.7189 | 0.2295 | 196 | one model, last epoch |
@@ -41,28 +41,57 @@ at the reference's own configuration (crop, batch 24, 25 epochs, approximate cor
 
 | | pyCLAD | reference | paper |
 |---|---|---|---|
-| honest protocol, no test labels | **0.8505 / 0.3769** | 0.8291 / 0.3319 | - |
-| reference protocol, epoch chosen on the test set | 0.8610 / 0.3690 | 0.8698 / 0.3273 | 0.874 / 0.300 |
-| what the selection is worth | +0.0105 image | +0.0407 image | - |
+| honest protocol, no test labels | **0.8528 +- 0.0047 / 0.3756 +- 0.0017** | 0.8287 +- 0.0042 / 0.3280 +- 0.0034 | - |
+| reference protocol, epoch chosen on the test set | 0.8610 / 0.3690 | **0.8723 +- 0.0026** / 0.3269 +- 0.0042 | 0.874 / 0.300 |
+| what the selection is worth | +0.0105 image | +0.0436 image | - |
 
-**With the leakage removed pyCLAD is ahead of the reference on both metrics**, by 0.021 image AUROC
-and 0.045 pixel AUPR. Under the reference's own protocol it stays 0.009 behind on image and 0.042
-ahead on pixel. The reference gains four times more from epoch selection because its trajectory is
-the less stable one - on candle it scores 0.4850 honestly and 0.7125 after selection, a jump of
-0.228. Its honest average, 0.8291, is 0.045 below the published 0.874, so the paper's VisA figure
-rests substantially on the selection mechanism rather than on the method.
+Three seeds per column, except pyCLAD's selected row which is one. **With the leakage removed pyCLAD
+is ahead by 0.0241 +- 0.0036 image AUROC** - 6.6 standard errors, so the difference is real - **and by
+0.048 pixel AUPR.** Under the reference's own protocol the ordering flips and the reference is 0.011
+ahead on image, because selection buys it four times more. Its honest average, 0.8287, is 0.045 below
+the published 0.874, so the paper's VisA figure rests substantially on the selection mechanism rather
+than on the method.
 
-The selection gain is a paired within-run statistic - both numbers come from the same trained model -
-so it is solid. The 0.021 image difference between the two implementations is not: pyCLAD's own
-seed spread at this configuration is +-0.005 over three seeds, while the reference column is a single
-seed whose spread is unmeasured. Two further reference seeds are running to put an error bar on it;
-until they land, treat the image-AUROC row as a difference of the same order as the noise and only
-the pixel row (0.045, an order above pyCLAD's +-0.002) as established.
-
-Roughly half of that pixel advantage is a metric convention rather than model quality. pyCLAD
+Roughly half of the pixel advantage is a metric convention rather than model quality. pyCLAD
 resamples the ground-truth mask with nearest-neighbour and counts every nonzero pixel; the reference
 resamples bilinearly and truncates to int. Ours yields 1.1-1.5x more positive pixels and about +0.022
-AUPR on the identical predictions. The remaining ~0.023 is the model.
+AUPR on the identical predictions. The remaining ~0.026 is the model.
+
+## Where the image-AUROC difference actually is
+
+It is not spread across the benchmark. Per category, honest protocol, three seeds on each side:
+
+| category | pyCLAD | reference | delta | share of the gap |
+|---|---|---|---|---|
+| candle | 0.6442 +- 0.0412 | 0.4352 +- 0.0721 | **+0.2090** | 72% |
+| macaroni1 | 0.7213 +- 0.0251 | 0.6633 +- 0.0316 | **+0.0580** | 20% |
+| pcb3 | 0.7768 +- 0.0119 | 0.7545 +- 0.0105 | +0.0223 | 8% |
+| fryum | 0.9207 +- 0.0112 | 0.9427 +- 0.0095 | -0.0220 | -8% |
+| pcb4 | 0.9373 +- 0.0153 | 0.9172 +- 0.0103 | +0.0201 | 7% |
+| capsules | 0.8423 +- 0.0349 | 0.8623 +- 0.0210 | -0.0200 | -7% |
+| cashew | 0.9610 +- 0.0036 | 0.9477 +- 0.0060 | +0.0133 | 5% |
+| pcb1 | 0.9695 +- 0.0134 | 0.9625 +- 0.0226 | +0.0070 | 2% |
+| macaroni2 | 0.5785 +- 0.0116 | 0.5837 +- 0.0743 | -0.0052 | -2% |
+| pcb2 | 0.9480 +- 0.0071 | 0.9432 +- 0.0199 | +0.0048 | 2% |
+| pipe_fryum | 0.9877 +- 0.0081 | 0.9857 +- 0.0042 | +0.0020 | 1% |
+| chewinggum | 0.9462 +- 0.0040 | 0.9470 +- 0.0015 | -0.0008 | 0% |
+
+Over the ten categories other than candle and macaroni1 the two implementations differ by +0.0022 on
+average - they agree. The whole difference is the two categories where prompt tuning diverges, and
+there pyCLAD is damaged less by the same failure: candle scores 0.787 with no training at all, so at
+0.6442 pyCLAD has lost 0.14 of it and the reference at 0.4352 has lost 0.35.
+
+That also explains why the ordering flips under the reference's protocol. Epoch selection is a repair
+mechanism for exactly this divergence - on candle it lifts the reference from 0.4352 to 0.7325 - and
+the implementation with more damage has more to recover. pyCLAD is not better at the method; it is
+less destabilised by it, which is worth more honestly than it is under selection.
+
+Of the mechanisms that could produce a different degree of divergence, only the mask-resampling path
+has any measured support: giving pyCLAD the reference's own 14x14 label maps moves candle from 0.6442
+to 0.5815, a third of the way to the reference, while raising the 12-category average to 0.8606. That
+is one seed against candle's +-0.04 spread, so it is a lead, not a result. Optimizer (Adam), learning
+rate (5e-4), schedule (constant), weight decay (0), gradient clip (1.0), prompt shape and prompt
+initialisation (uniform -1..1) are identical on both sides.
 
 ## What turned out to be inside the noise
 
