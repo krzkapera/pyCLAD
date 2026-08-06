@@ -52,6 +52,33 @@ the less stable one - on candle it scores 0.4850 honestly and 0.7125 after selec
 0.228. Its honest average, 0.8291, is 0.045 below the published 0.874, so the paper's VisA figure
 rests substantially on the selection mechanism rather than on the method.
 
+The selection gain is a paired within-run statistic - both numbers come from the same trained model -
+so it is solid. The 0.021 image difference between the two implementations is not: pyCLAD's own
+seed spread at this configuration is +-0.005 over three seeds, while the reference column is a single
+seed whose spread is unmeasured. Two further reference seeds are running to put an error bar on it;
+until they land, treat the image-AUROC row as a difference of the same order as the noise and only
+the pixel row (0.045, an order above pyCLAD's +-0.002) as established.
+
+Roughly half of that pixel advantage is a metric convention rather than model quality. pyCLAD
+resamples the ground-truth mask with nearest-neighbour and counts every nonzero pixel; the reference
+resamples bilinearly and truncates to int. Ours yields 1.1-1.5x more positive pixels and about +0.022
+AUPR on the identical predictions. The remaining ~0.023 is the model.
+
+## What turned out to be inside the noise
+
+Three effects reported earlier as real did not survive replication across seeds, and are retracted:
+
+| claim | measurement that retracted it |
+|---|---|
+| the mask-resampling path is worth +0.042 image | 1 epoch, 3 seeds: our masks 0.7918 +- 0.016, reference 14x14 masks 0.8023 +- 0.016, i.e. +0.010 +- 0.016 |
+| exact coreset selection is worth +0.043 image | 25 epochs, ens25, 3 seeds each: exact 0.8598 +- 0.008 against approximate 0.8528 +- 0.005, i.e. +0.007 +- 0.009 |
+| "the two pipelines are numerically equivalent" | that rested on one coincidental single-run match |
+
+The single-epoch isolation runs used to attribute these effects were underpowered: the 12-class
+average moves by +-0.016 between seeds at one epoch, which is larger than any of the differences they
+were meant to resolve. Only paired within-run comparisons (the selection gain above) and
+multi-seed means with their spread are quoted as findings.
+
 ## Where we stand
 
 | configuration | image AUROC | pixel AUPR |
@@ -120,8 +147,8 @@ test, where the official `1cls.csv` splits normals about 90/10.
   grid; the 224 variant is bit-identical to full resolution through pyCLAD's nearest-neighbour path).
 - Image-score reweighting from Eq. 5-6: `reweighting_num_nn=9` sits inside seed noise, `=3` costs
   0.08.
-- The reference's `approx_greedy_coreset`: worse than our exact selection (0.774 against 0.786
-  image, 0.243 against 0.279 pixel).
+- The reference's `approx_greedy_coreset`: a single-run pair put our exact selection 0.012 ahead, but
+  three seeds each at the reference configuration reduce that to +0.007 +- 0.009 - inside the noise.
 - Prompt length 5: helps only where the prompt barely trains (+0.025 at one epoch, from the random
   perturbation), and costs 0.05 at 25 epochs.
 
