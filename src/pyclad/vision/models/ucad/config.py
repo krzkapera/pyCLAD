@@ -43,6 +43,14 @@ class UCADConfig(BaseModel):
         "of the nearest match used in the softmax weight (>= 2); 0 disables it (image score = max patch score)",
     )
     blur_sigma: float = Field(default=3.0, description="Gaussian smoothing applied to the upsampled anomaly map")
+    squared_distances: bool = Field(
+        default=False,
+        description=(
+            "Score patches by squared instead of true Euclidean distance, as the reference does by "
+            "reading faiss.IndexFlatL2 without taking a square root. Leaves the image score's ranking "
+            "unchanged and changes the anomaly map, which is squared before upsampling and smoothing."
+        ),
+    )
     reset_prompt_per_task: bool = Field(
         default=True,
         description="Re-initialize the prompt before each concept instead of continuing from the previous one",

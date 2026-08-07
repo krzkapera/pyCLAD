@@ -2,11 +2,16 @@
 
 Usage: pixel_convention_effect.py     (configured through the environment, see ucad_probe.py)
 
-pyCLAD resamples the ground-truth mask with nearest-neighbour and counts every nonzero pixel; the
-reference resamples it bilinearly and truncates to int, which keeps only pixels that survive the
-interpolation at full weight. On identical predictions the two disagree, so part of the pixel-AUPR
-difference between the implementations is the metric rather than the model. This trains once per
-concept and scores the same maps under both, which makes the comparison paired and exact.
+Two conventions separate pyCLAD's pixel AUPR from the reference's, and neither is the model:
+
+- the ground truth. pyCLAD resamples the mask with nearest-neighbour and counts every nonzero pixel;
+  the reference resamples it bilinearly and truncates to int, keeping only pixels that survive the
+  interpolation at full weight.
+- the anomaly map. pyCLAD scores patches by Euclidean distance; the reference reads squared
+  distances out of faiss and never takes their root, so its map is squared before it is upsampled
+  and smoothed.
+
+This trains once per concept and reports the full 2x2, which makes every comparison paired.
 """
 
 import logging
@@ -100,20 +105,28 @@ def main():
         model = UCADModel(config)
         model.fit(train_concept.data)
 
-        maps = model.predict(test_concept.data).score_maps
+        truths = {"ours": test_concept.masks, "reference": reference_masks_for(test_concept.name, samples)}
+        if truths["reference"].shape != truths["ours"].shape:
+            raise ValueError(
+                f"{test_concept.name}: {truths['reference'].shape} reference masks against "
+                f"{truths['ours'].shape} ours"
+            )
 
-        ours = test_concept.masks
-        theirs = reference_masks_for(test_concept.name, samples)
-        if theirs.shape != ours.shape:
-            raise ValueError(f"{test_concept.name}: {theirs.shape} reference masks against {ours.shape} ours")
+        scores = {}
+        for map_convention in ("ours", "reference"):
+            model.scorer.squared_distances = map_convention == "reference"
+            maps = model.predict(test_concept.data).score_maps
+            for truth_convention, truth in truths.items():
+                scores[f"map_{map_convention}_truth_{truth_convention}"] = average_precision_score(
+                    truth.reshape(-1), maps.reshape(-1)
+                )
 
         logger.info(
-            "CONVENTION %s ours=%.4f reference=%.4f positive_pixels_ours=%d positive_pixels_reference=%d",
+            "CONVENTION %s %s positive_pixels_ours=%d positive_pixels_reference=%d",
             test_concept.name,
-            average_precision_score(ours.reshape(-1), maps.reshape(-1)),
-            average_precision_score(theirs.reshape(-1), maps.reshape(-1)),
-            int(ours.sum()),
-            int(theirs.sum()),
+            " ".join(f"{name}={value:.4f}" for name, value in scores.items()),
+            int(truths["ours"].sum()),
+            int(truths["reference"].sum()),
         )
 
 

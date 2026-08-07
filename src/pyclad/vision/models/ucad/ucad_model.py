@@ -44,6 +44,7 @@ class UCADModel(VisionModel):
             num_nn=self.config.anomaly_scorer_num_nn,
             reweighting_num_nn=self.config.reweighting_num_nn,
             blur_sigma=self.config.blur_sigma,
+            squared_distances=self.config.squared_distances,
         )
         self.mask_provider = mask_provider if mask_provider is not None else create_mask_provider(
             self.config, device=self.device

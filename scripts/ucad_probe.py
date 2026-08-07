@@ -10,7 +10,8 @@ sbatch submissions differing only in their --export list:
     UCAD_MASKS_DIR    SAM masks root                   (default the dataset's masks env var)
     UCAD_REWEIGHTING  reweighting_num_nn, 0 = max      (default 0)
     UCAD_KNOWLEDGE    knowledge_size, one image = 196  (default 196)
-    UCAD_PROMPT_LEN   prefix tokens per layer          (default 1; the reference uses 5)
+    UCAD_PROMPT_LEN   prefix tokens per layer          (default 1)
+    UCAD_VIT          timm backbone name               (default vit_base_patch16_224)
     UCAD_CORESET      exact | approximate              (default exact)
     UCAD_RESIZE_MODE  stretch | short_side_crop        (default stretch; the reference crops)
     UCAD_ENSEMBLE     last epochs averaged into a score (default 1)
@@ -53,6 +54,7 @@ BATCH_SIZE = int(os.environ["UCAD_BATCH_SIZE"])
 REWEIGHTING = int(os.environ.get("UCAD_REWEIGHTING", "0"))
 KNOWLEDGE_SIZE = int(os.environ.get("UCAD_KNOWLEDGE", "196"))
 PROMPT_LENGTH = int(os.environ.get("UCAD_PROMPT_LEN", "1"))
+VIT_MODEL = os.environ.get("UCAD_VIT", "vit_base_patch16_224")
 CORESET_MODE = os.environ.get("UCAD_CORESET", "exact")
 RESIZE_MODE = os.environ.get("UCAD_RESIZE_MODE", "stretch")
 ENSEMBLE_EPOCHS = int(os.environ.get("UCAD_ENSEMBLE", "1"))
@@ -65,10 +67,10 @@ INPUT_SIZE = (224, 224)
 
 def main():
     logger.info(
-        "PROBE dataset=%s epochs=%d batch_size=%d prompt_len=%d reweighting=%d knowledge=%d "
+        "PROBE dataset=%s vit=%s epochs=%d batch_size=%d prompt_len=%d reweighting=%d knowledge=%d "
         "coreset=%s resize=%s ensemble=%d blur=%.1f seed=%d masks=%s categories=%s",
-        DATASET, EPOCHS, BATCH_SIZE, PROMPT_LENGTH, REWEIGHTING, KNOWLEDGE_SIZE, CORESET_MODE,
-        RESIZE_MODE, ENSEMBLE_EPOCHS, BLUR_SIGMA, SEED, MASKS_DIR, CATEGORIES or "all",
+        DATASET, VIT_MODEL, EPOCHS, BATCH_SIZE, PROMPT_LENGTH, REWEIGHTING, KNOWLEDGE_SIZE,
+        CORESET_MODE, RESIZE_MODE, ENSEMBLE_EPOCHS, BLUR_SIGMA, SEED, MASKS_DIR, CATEGORIES or "all",
     )
 
     dataset = read_vision_benchmark_dataset(
@@ -83,6 +85,7 @@ def main():
 
     config = UCADConfig(
         max_tasks=len(dataset.train_concepts()),
+        vit_model_name=VIT_MODEL,
         input_size=INPUT_SIZE,
         resize_mode=RESIZE_MODE,
         training_epochs=EPOCHS,
