@@ -1,8 +1,9 @@
 # UCAD on VisA: what pyCLAD reproduces and what it does not
 
-pyCLAD's UCAD reproduces the reference implementation on VisA at image level and exceeds it at pixel
-level. This records the comparison, the configuration it holds at, and the two evaluation protocols
-the numbers can be read under. Paper reference: Liu et al., AAAI 2024, Tables 3-6. Runs live in
+pyCLAD's UCAD reproduces the reference implementation at image level on both benchmarks - VisA to
+0.0002 and MVTec to 0.005 - and exceeds it at pixel level, two thirds of which is a ground-truth
+resampling convention rather than the model. This records the comparison, the configuration it holds
+at, and the two evaluation protocols the numbers can be read under. Paper reference: Liu et al., AAAI 2024, Tables 3-6. Runs live in
 `$SCRATCH/pp/runs` on Athena (`protocol_*`, `probe_*`) and Ares (`ref_perepoch_*`, `probe_*`).
 
 ## The two protocols
@@ -73,18 +74,107 @@ Pixel AUPR:
 cell of the concept matrix repeats bit for bit and task routing is correct on every test image -
 against the paper's FM 0.039.
 
-**Pixel AUPR does not agree** and pyCLAD is 0.048 ahead. Part of that is a metric convention rather
-than model quality: pyCLAD resamples the ground-truth mask with nearest-neighbour and counts every
-nonzero pixel, the reference resamples bilinearly and truncates to int, which on identical
-predictions was worth about +0.022 AUPR. The ratio is largest exactly where anomalies are smallest -
-macaroni1 0.0855 against 0.0231, macaroni2 0.0296 against 0.0127 - which is the signature of that
-convention, since bilinear-then-truncate erases thin regions the nearest-neighbour path keeps.
-Whether the remainder is the model has not been measured; it needs one run scored under both
-conventions.
+**Pixel AUPR does not agree** and pyCLAD is 0.046 ahead. Two thirds of that is a metric convention
+rather than model quality, measured by scoring the same anomaly maps against both ground truths
+(`scripts/pixel_convention_effect.py`, three seeds):
+
+| category | our ground truth | the reference's | convention effect | positive pixels, ours / theirs |
+|---|---|---|---|---|
+| candle | 0.1214 +- 0.0094 | 0.0860 +- 0.0078 | +0.0354 | 14898 / 9779 (1.52x) |
+| capsules | 0.6121 +- 0.0121 | 0.5836 +- 0.0130 | +0.0285 | 34772 / 28646 (1.21x) |
+| cashew | 0.6355 +- 0.0049 | 0.6120 +- 0.0058 | +0.0235 | 91954 / 84699 (1.09x) |
+| chewinggum | 0.3434 +- 0.0200 | 0.3340 +- 0.0229 | +0.0093 | 50973 / 39915 (1.28x) |
+| fryum | 0.4065 +- 0.0019 | 0.3595 +- 0.0023 | +0.0469 | 258911 / 231304 (1.12x) |
+| macaroni1 | 0.0848 +- 0.0034 | 0.0251 +- 0.0004 | +0.0597 | 5456 / 1905 (2.86x) |
+| macaroni2 | 0.0297 +- 0.0032 | 0.0113 +- 0.0008 | +0.0185 | 4033 / 1254 (3.22x) |
+| pcb1 | 0.7935 +- 0.0076 | 0.8212 +- 0.0069 | **-0.0277** | 61299 / 50332 (1.22x) |
+| pcb2 | 0.3104 +- 0.0113 | 0.2107 +- 0.0138 | +0.0997 | 27161 / 13443 (2.02x) |
+| pcb3 | 0.2725 +- 0.0203 | 0.2524 +- 0.0218 | +0.0201 | 39388 / 27605 (1.43x) |
+| pcb4 | 0.2075 +- 0.0054 | 0.1839 +- 0.0079 | +0.0235 | 81861 / 60605 (1.35x) |
+| pipe_fryum | 0.6719 +- 0.0263 | 0.6382 +- 0.0224 | +0.0337 | 105735 / 95924 (1.10x) |
+| **average** | **0.3741 +- 0.0013** | **0.3432 +- 0.0009** | **+0.0309** | |
+
+So of the 0.0461 difference, **0.0309 is the metric and 0.0152 is the model**: scored under the
+reference's own convention pyCLAD still reaches 0.3432 against its 0.3280. The convention is worth
+most where anomalies are thinnest - macaroni2 keeps 3.2x more positive pixels under our resampling,
+macaroni1 2.9x - because bilinear-then-truncate erases regions narrower than the interpolation
+kernel. On pcb1 it goes the other way: discarding the boundary pixels removes the ones the model
+localises worst, and the reference's stricter ground truth scores 0.028 higher.
 
 The reference gains +0.0436 image AUROC from epoch selection and pyCLAD +0.0390, so **the published
 VisA figure rests substantially on the selection mechanism**: without it the reference averages
 0.8287, which is 0.045 below its own published 0.874.
+
+## MVTec AD, fifteen categories, three seeds on each side
+
+Same configuration, the reference's own `mvtec2d-sam-b` supervision. Image AUROC:
+
+| category | pyCLAD honest | pyCLAD reference-protocol | reference honest | reference protocol | paper |
+|---|---|---|---|---|---|
+| bottle* | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.000 |
+| cable | 0.7207 +- 0.0058 | 0.7224 +- 0.0048 | 0.7216 +- 0.0055 | 0.7280 +- 0.0058 | 0.751 |
+| capsule | 0.9261 +- 0.0055 | 0.9298 +- 0.0084 | 0.9166 +- 0.0179 | 0.9273 +- 0.0037 | 0.866 |
+| carpet | 0.9783 +- 0.0012 | 0.9848 +- 0.0008 | 0.9819 +- 0.0028 | 0.9853 +- 0.0036 | 0.965 |
+| grid | 0.9610 +- 0.0049 | 0.9749 +- 0.0055 | 0.9713 +- 0.0034 | 0.9791 +- 0.0051 | 0.944 |
+| hazelnut* | 0.9948 +- 0.0062 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 0.994 |
+| leather* | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.000 |
+| metal_nut | 0.9977 +- 0.0020 | 0.9990 +- 0.0010 | 0.9977 +- 0.0003 | 0.9980 +- 0.0005 | 0.988 |
+| pill | 0.9543 +- 0.0074 | 0.9574 +- 0.0070 | 0.9512 +- 0.0057 | 0.9588 +- 0.0070 | 0.894 |
+| screw | 0.4947 +- 0.0457 | 0.5358 +- 0.0365 | 0.5554 +- 0.0578 | 0.6195 +- 0.0431 | 0.739 |
+| tile* | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 0.998 |
+| toothbrush* | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.000 |
+| transistor | 0.9507 +- 0.0015 | 0.9568 +- 0.0054 | 0.9529 +- 0.0044 | 0.9625 +- 0.0045 | 0.874 |
+| wood | 0.9959 +- 0.0010 | 0.9959 +- 0.0010 | 0.9930 +- 0.0009 | 0.9953 +- 0.0018 | 0.995 |
+| zipper | 0.9623 +- 0.0044 | 0.9685 +- 0.0034 | 0.9674 +- 0.0021 | 0.9680 +- 0.0015 | 0.938 |
+| **average** | **0.9291 +- 0.0029** | **0.9350 +- 0.0024** | **0.9339 +- 0.0023** | **0.9415 +- 0.0021** | **0.930** |
+
+Pixel AUPR:
+
+| category | pyCLAD honest | pyCLAD reference-protocol | reference honest | reference protocol | paper |
+|---|---|---|---|---|---|
+| bottle* | 0.8313 +- 0.0048 | 0.8337 +- 0.0053 | 0.7822 +- 0.0055 | 0.7822 +- 0.0055 | 0.752 |
+| cable | 0.2344 +- 0.0153 | 0.2222 +- 0.0135 | 0.1920 +- 0.0099 | 0.1801 +- 0.0241 | 0.290 |
+| capsule | 0.4323 +- 0.0074 | 0.4326 +- 0.0084 | 0.3656 +- 0.0047 | 0.3631 +- 0.0016 | 0.349 |
+| carpet | 0.6804 +- 0.0083 | 0.7212 +- 0.0006 | 0.6281 +- 0.0060 | 0.6564 +- 0.0077 | 0.622 |
+| grid | 0.3071 +- 0.0018 | 0.3065 +- 0.0215 | 0.2241 +- 0.0016 | 0.2241 +- 0.0029 | 0.187 |
+| hazelnut* | 0.6449 +- 0.0076 | 0.6246 +- 0.0128 | 0.5162 +- 0.0074 | 0.5162 +- 0.0074 | 0.506 |
+| leather* | 0.5210 +- 0.0044 | 0.4996 +- 0.0116 | 0.4188 +- 0.0055 | 0.4188 +- 0.0055 | 0.333 |
+| metal_nut | 0.8103 +- 0.0039 | 0.7929 +- 0.0189 | 0.7713 +- 0.0045 | 0.7699 +- 0.0029 | 0.775 |
+| pill | 0.6899 +- 0.0027 | 0.6803 +- 0.0085 | 0.6420 +- 0.0153 | 0.6314 +- 0.0239 | 0.634 |
+| screw | 0.2789 +- 0.0105 | 0.1194 +- 0.0779 | 0.2121 +- 0.0039 | 0.1626 +- 0.0418 | 0.214 |
+| tile* | 0.5983 +- 0.0066 | 0.5886 +- 0.0091 | 0.5226 +- 0.0062 | 0.5226 +- 0.0062 | 0.549 |
+| toothbrush* | 0.5015 +- 0.0005 | 0.4984 +- 0.0116 | 0.3383 +- 0.0039 | 0.3383 +- 0.0039 | 0.298 |
+| transistor | 0.5321 +- 0.0124 | 0.5145 +- 0.0260 | 0.4821 +- 0.0138 | 0.4796 +- 0.0142 | 0.398 |
+| wood | 0.6199 +- 0.0033 | 0.6294 +- 0.0079 | 0.5829 +- 0.0033 | 0.5863 +- 0.0096 | 0.535 |
+| zipper | 0.4876 +- 0.0054 | 0.4938 +- 0.0126 | 0.4264 +- 0.0072 | 0.4234 +- 0.0039 | 0.398 |
+| **average** | **0.5447 +- 0.0010** | **0.5305 +- 0.0024** | **0.4736 +- 0.0037** | **0.4703 +- 0.0030** | **0.456** |
+
+| | pyCLAD - reference |
+|---|---|
+| image, honest protocol | -0.0048 +- 0.0021 (2.3 sd) |
+| image, reference protocol | -0.0064 +- 0.0018 (3.5 sd) |
+| pixel, honest protocol | +0.0710 +- 0.0022 |
+| pixel, reference protocol | +0.0602 +- 0.0022 |
+
+pyCLAD is 0.005 **behind** on image here, and screw is 84% of it: 0.4947 against 0.5554, a category
+where both implementations sit far below the paper's 0.739 and the seed spread is +-0.05, so the
+per-category difference is 1.4 standard errors on its own. pyCLAD's honest 0.9291 matches the paper's
+0.930. The pixel column carries the same ground-truth convention as VisA, which was not measured
+separately here, so the 0.071 is an upper bound on the model's share.
+
+\* The reference stops training a category as soon as the cumulative ensemble reaches image AUROC
+exactly 1.0 on the test set:
+
+```python
+if (auroc == 1):     # run_ucad.py, inside the branch that also commits the state to memory
+    break
+```
+
+That fires on five MVTec categories - bottle and leather after one epoch, toothbrush after one or
+two, tile after one to three, hazelnut after three to eight - so for those the reference has no
+leak-free reading at all: the stopping point itself was chosen with test labels, and its honest and
+selected columns are the same number by construction. No VisA category reaches 1.0, so the VisA
+comparison is unaffected.
 
 ## The configuration these numbers hold at
 
@@ -203,8 +293,8 @@ profitable.
 
 ## Open
 
-- The pixel-AUPR difference: how much of the 0.048 is the ground-truth mask convention and how much
-  is the model. One run scored under both conventions settles it.
+- The MVTec pixel-AUPR difference has not been decomposed the way VisA's was; the ground-truth
+  convention plausibly carries a similar share of it.
 - The train/test split: our VisA copy holds every normal image with the first 20 per class held out
   for test, where the official `1cls.csv` splits normals about 90/10. Both implementations were
   compared on ours, so it does not affect the comparison, only the comparison to the paper.
