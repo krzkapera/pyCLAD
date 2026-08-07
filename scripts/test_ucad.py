@@ -19,7 +19,7 @@ from pyclad.vision.models.ucad.inputs import (
     ImagePathDataset,
     build_dataset,
 )
-from pyclad.vision.models.ucad.memory import TaskMemoryBank
+from pyclad.vision.models.ucad.memory import TaskMemoryBank, TaskState
 from pyclad.vision.models.ucad.prompt import PrefixTuningPrompt
 from pyclad.vision.models.ucad.sam import MaskProvider
 
@@ -112,7 +112,7 @@ class TestMemoryBank:
     def test_stored_state_is_not_aliased_by_the_live_prompt(self):
         prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, num_heads=2, embed_dim=4)
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), states=[(prompt.get_prompt_state(), torch.zeros(2, 4))])
+        memory.add_task(0, key=torch.zeros(2, 4), states=[TaskState(prompt_state=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))])
         stored = memory.get_states(0)[0].prompt_state.clone()
 
         prompt.reset_prompt()
@@ -122,7 +122,7 @@ class TestMemoryBank:
     def test_restoring_a_task_does_not_mutate_the_bank(self):
         prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, num_heads=2, embed_dim=4)
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), states=[(prompt.get_prompt_state(), torch.zeros(2, 4))])
+        memory.add_task(0, key=torch.zeros(2, 4), states=[TaskState(prompt_state=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))])
         stored = memory.get_states(0)[0].prompt_state.clone()
 
         prompt.set_prompt_state(memory.get_states(0)[0].prompt_state)
@@ -132,10 +132,10 @@ class TestMemoryBank:
 
     def test_bank_rejects_more_tasks_than_configured(self):
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), states=[(torch.zeros(2), torch.zeros(2, 4))])
+        memory.add_task(0, key=torch.zeros(2, 4), states=[TaskState(prompt_state=torch.zeros(2), knowledge=torch.zeros(2, 4))])
 
         with pytest.raises(RuntimeError):
-            memory.add_task(1, key=torch.zeros(2, 4), states=[(torch.zeros(2), torch.zeros(2, 4))])
+            memory.add_task(1, key=torch.zeros(2, 4), states=[TaskState(prompt_state=torch.zeros(2), knowledge=torch.zeros(2, 4))])
 
 
 class TestCoreset:
@@ -168,9 +168,9 @@ class TestModelIntegration:
             0,
             key=torch.zeros(4, model.config.target_embed_dimension),
             states=[
-                (
-                    model.backbone.get_prompt_state(),
-                    torch.zeros(4, model.config.target_embed_dimension),
+                TaskState(
+                    prompt_state=model.backbone.get_prompt_state(),
+                    knowledge=torch.zeros(4, model.config.target_embed_dimension),
                 )
             ],
         )

@@ -1,6 +1,7 @@
-import torch
 from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from typing import List, Sequence
+
+import torch
 
 
 @dataclass
@@ -9,6 +10,9 @@ class TaskState:
 
     prompt_state: torch.Tensor
     knowledge: torch.Tensor
+
+    def on_cpu(self) -> "TaskState":
+        return TaskState(prompt_state=self.prompt_state.cpu(), knowledge=self.knowledge.cpu())
 
 
 @dataclass
@@ -23,12 +27,7 @@ class TaskMemoryBank:
         self.max_tasks = max_tasks
         self.tasks: List[TaskMemory] = []
 
-    def add_task(
-        self,
-        task_id: int,
-        key: torch.Tensor,
-        states: Sequence[Tuple[torch.Tensor, torch.Tensor]],
-    ):
+    def add_task(self, task_id: int, key: torch.Tensor, states: Sequence[TaskState]):
         if len(self.tasks) >= self.max_tasks:
             raise RuntimeError(f"Memory bank full. Cannot exceed {self.max_tasks} tasks.")
         if not states:
@@ -38,9 +37,7 @@ class TaskMemoryBank:
             TaskMemory(
                 task_id=task_id,
                 key=key.cpu(),
-                states=[
-                    TaskState(prompt_state=prompt.cpu(), knowledge=knowledge.cpu()) for prompt, knowledge in states
-                ],
+                states=[state.on_cpu() for state in states],
             )
         )
 

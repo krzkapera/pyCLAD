@@ -15,7 +15,7 @@ from .contrastive import structure_contrastive_loss
 from .coreset import greedy_coreset_sampling
 from .features import patchcore_aggregate
 from .inputs import build_dataset
-from .memory import TaskMemoryBank
+from .memory import TaskMemoryBank, TaskState
 from .sam import MaskProvider, create_mask_provider
 from .scoring import NearestNeighborScorer, combine_members
 from .vit_prompted import PromptedViT
@@ -132,7 +132,7 @@ class UCADModel(VisionModel):
 
         self.backbone.train()
         snapshot_epochs = self._snapshot_epochs()
-        states: list[tuple[torch.Tensor, torch.Tensor]] = []
+        states: list[TaskState] = []
 
         for epoch in range(self.config.training_epochs):
             total_loss = 0.0
@@ -181,7 +181,7 @@ class UCADModel(VisionModel):
             return set(range(1, epochs + 1))
         return {round(epochs / members * (index + 1)) for index in range(members)}
 
-    def _snapshot_state(self, extraction_loader: DataLoader, dimension: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def _snapshot_state(self, extraction_loader: DataLoader, dimension: int) -> TaskState:
         """The current prompt together with the knowledge bank it produces."""
         self.backbone.eval()
         knowledge_features = self._extract_all_features(extraction_loader, use_prompt=True)
@@ -193,7 +193,7 @@ class UCADModel(VisionModel):
             device=self.device,
             mode=self.config.coreset_mode,
         )
-        return self.backbone.get_prompt_state(), knowledge
+        return TaskState(prompt_state=self.backbone.get_prompt_state(), knowledge=knowledge)
 
     def predict(self, data) -> VisionPredictionResults:
         self.backbone.eval()

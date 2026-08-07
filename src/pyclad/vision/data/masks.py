@@ -11,16 +11,13 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from pyclad.vision.data.geometry import ResizeMode, resize_image
+from pyclad.vision.data.loading import ImageLoading
 from pyclad.vision.data.sample import VisionSample
 
 
-def load_ground_truth_mask(
-    sample: VisionSample,
-    resize_to: Optional[tuple[int, int]] = None,
-    resize_mode: ResizeMode = "stretch",
-) -> np.ndarray:
+def load_ground_truth_mask(sample: VisionSample, loading: ImageLoading = ImageLoading()) -> np.ndarray:
     if sample.mask_path is None:
-        height, width = resize_to if resize_to is not None else _image_size(sample.image_path)
+        height, width = loading.resize_to or _image_size(sample.image_path)
         return np.zeros((height, width), dtype=np.uint8)
 
     mask_path = Path(sample.mask_path)
@@ -29,16 +26,15 @@ def load_ground_truth_mask(
     else:
         mask = _load_bitmap_mask(mask_path)
 
-    if resize_to is not None:
-        mask = _resize_binary_mask(mask, resize_to, resize_mode)
+    if loading.resize_to is not None:
+        mask = _resize_binary_mask(mask, loading.resize_to, loading.resize_mode)
     return mask.astype(np.uint8, copy=False)
 
 
 def load_ground_truth_masks_for_samples(
     samples: Sequence[VisionSample],
-    resize_to: Optional[tuple[int, int]] = None,
+    loading: ImageLoading = ImageLoading(),
     skip_missing_anomaly_masks: bool = True,
-    resize_mode: ResizeMode = "stretch",
 ) -> tuple[np.ndarray, np.ndarray]:
     masks: list[np.ndarray] = []
     kept_indices: list[int] = []
@@ -49,11 +45,11 @@ def load_ground_truth_masks_for_samples(
                 continue
             raise FileNotFoundError(f"Missing anomaly mask for sample: {sample.image_path}")
 
-        masks.append(load_ground_truth_mask(sample=sample, resize_to=resize_to, resize_mode=resize_mode))
+        masks.append(load_ground_truth_mask(sample, loading))
         kept_indices.append(index)
 
     if not masks:
-        empty_shape = (0, *(resize_to if resize_to is not None else (0, 0)))
+        empty_shape = (0, *(loading.resize_to or (0, 0)))
         return np.zeros(empty_shape, dtype=np.uint8), np.asarray([], dtype=np.int64)
 
     return np.stack(masks, axis=0), np.asarray(kept_indices, dtype=np.int64)
