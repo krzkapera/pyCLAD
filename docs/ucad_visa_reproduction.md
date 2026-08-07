@@ -1,8 +1,9 @@
 # UCAD on VisA: what pyCLAD reproduces and what it does not
 
-pyCLAD's UCAD reproduces the reference implementation at image level on both benchmarks - VisA to
-0.0002 and MVTec to 0.005 - and exceeds it at pixel level, two thirds of which is a ground-truth
-resampling convention rather than the model. This records the comparison, the configuration it holds
+pyCLAD's UCAD reproduces the reference implementation on both benchmarks: image AUROC to 0.0002 on
+VisA and 0.005 on MVTec, and pixel AUPR to 0.006 and 0.003 once the reference's two scoring
+conventions - its ground-truth resampling and its squared distances - are applied to pyCLAD's own
+predictions. This records the comparison, the configuration it holds
 at, and the two evaluation protocols the numbers can be read under. Paper reference: Liu et al., AAAI 2024, Tables 3-6. Runs live in
 `$SCRATCH/pp/runs` on Athena (`protocol_*`, `probe_*`) and Ares (`ref_perepoch_*`, `probe_*`).
 
@@ -74,32 +75,32 @@ Pixel AUPR:
 cell of the concept matrix repeats bit for bit and task routing is correct on every test image -
 against the paper's FM 0.039.
 
-**Pixel AUPR does not agree** and pyCLAD is 0.046 ahead. Two thirds of that is a metric convention
-rather than model quality, measured by scoring the same anomaly maps against both ground truths
-(`scripts/pixel_convention_effect.py`, three seeds):
+**Pixel AUPR agrees once both scoring conventions are equalised.** Two of them separate the
+implementations and neither is the model:
 
-| category | our ground truth | the reference's | convention effect | positive pixels, ours / theirs |
-|---|---|---|---|---|
-| candle | 0.1214 +- 0.0094 | 0.0860 +- 0.0078 | +0.0354 | 14898 / 9779 (1.52x) |
-| capsules | 0.6121 +- 0.0121 | 0.5836 +- 0.0130 | +0.0285 | 34772 / 28646 (1.21x) |
-| cashew | 0.6355 +- 0.0049 | 0.6120 +- 0.0058 | +0.0235 | 91954 / 84699 (1.09x) |
-| chewinggum | 0.3434 +- 0.0200 | 0.3340 +- 0.0229 | +0.0093 | 50973 / 39915 (1.28x) |
-| fryum | 0.4065 +- 0.0019 | 0.3595 +- 0.0023 | +0.0469 | 258911 / 231304 (1.12x) |
-| macaroni1 | 0.0848 +- 0.0034 | 0.0251 +- 0.0004 | +0.0597 | 5456 / 1905 (2.86x) |
-| macaroni2 | 0.0297 +- 0.0032 | 0.0113 +- 0.0008 | +0.0185 | 4033 / 1254 (3.22x) |
-| pcb1 | 0.7935 +- 0.0076 | 0.8212 +- 0.0069 | **-0.0277** | 61299 / 50332 (1.22x) |
-| pcb2 | 0.3104 +- 0.0113 | 0.2107 +- 0.0138 | +0.0997 | 27161 / 13443 (2.02x) |
-| pcb3 | 0.2725 +- 0.0203 | 0.2524 +- 0.0218 | +0.0201 | 39388 / 27605 (1.43x) |
-| pcb4 | 0.2075 +- 0.0054 | 0.1839 +- 0.0079 | +0.0235 | 81861 / 60605 (1.35x) |
-| pipe_fryum | 0.6719 +- 0.0263 | 0.6382 +- 0.0224 | +0.0337 | 105735 / 95924 (1.10x) |
-| **average** | **0.3741 +- 0.0013** | **0.3432 +- 0.0009** | **+0.0309** | |
+- *the ground truth.* pyCLAD resamples the mask with nearest-neighbour and counts every nonzero
+  pixel; the reference resamples bilinearly and truncates to int, keeping only pixels the
+  interpolation left at full weight.
+- *the anomaly map.* The reference reads its neighbour distances out of `faiss.IndexFlatL2` and
+  never takes their square root, so it scores patches by **squared** distance. The image score is
+  the maximum over patches and squaring preserves order, so image AUROC is untouched; the map is
+  squared before it is upsampled and smoothed, and neither operation commutes with squaring.
 
-So of the 0.0461 difference, **0.0309 is the metric and 0.0152 is the model**: scored under the
-reference's own convention pyCLAD still reaches 0.3432 against its 0.3280. The convention is worth
-most where anomalies are thinnest - macaroni2 keeps 3.2x more positive pixels under our resampling,
-macaroni1 2.9x - because bilinear-then-truncate erases regions narrower than the interpolation
-kernel. On pcb1 it goes the other way: discarding the boundary pixels removes the ones the model
-localises worst, and the reference's stricter ground truth scores 0.028 higher.
+Scoring the same trained models under all four combinations (`scripts/pixel_convention_effect.py`,
+three seeds, 12-category average):
+
+| pyCLAD | our ground truth | the reference's |
+|---|---|---|
+| our map (Euclidean) | 0.3741 +- 0.0040 | 0.3431 +- 0.0041 |
+| the reference's map (squared) | 0.3670 +- 0.0036 | **0.3344 +- 0.0036** |
+
+against the reference's own **0.3280 +- 0.0034**. The 0.0461 difference decomposes into **0.0310
+ground-truth convention, 0.0087 squared distances and 0.0063 residual** - the residual is 2.2
+standard errors and 1.9% relative. Per category the ground-truth convention is worth most where
+anomalies are thinnest, since bilinear-then-truncate erases regions narrower than the interpolation
+kernel: macaroni2 keeps 3.2x more positive pixels under our resampling, macaroni1 2.9x, pcb2 2.0x. On
+pcb1 it reverses - discarding the boundary pixels removes the ones the model localises worst, and the
+reference's stricter ground truth scores 0.028 higher.
 
 The reference gains +0.0436 image AUROC from epoch selection and pyCLAD +0.0390, so **the published
 VisA figure rests substantially on the selection mechanism**: without it the reference averages
@@ -156,11 +157,36 @@ Pixel AUPR:
 | pixel, honest protocol | +0.0710 +- 0.0022 |
 | pixel, reference protocol | +0.0602 +- 0.0022 |
 
-pyCLAD is 0.005 **behind** on image here, and screw is 84% of it: 0.4947 against 0.5554, a category
-where both implementations sit far below the paper's 0.739 and the seed spread is +-0.05, so the
-per-category difference is 1.4 standard errors on its own. pyCLAD's honest 0.9291 matches the paper's
-0.930. The pixel column carries the same ground-truth convention as VisA, which was not measured
-separately here, so the 0.071 is an upper bound on the model's share.
+pyCLAD is 0.005 **behind** on image here, and screw is 84% of it - see below. pyCLAD's honest 0.9291
+matches the paper's 0.930.
+
+The pixel column carries the same two conventions, and equalising them closes it as it does on VisA:
+
+| pyCLAD | our ground truth | the reference's |
+|---|---|---|
+| our map (Euclidean) | 0.5446 +- 0.0021 | 0.4906 +- 0.0021 |
+| the reference's map (squared) | 0.5316 +- 0.0020 | **0.4766 +- 0.0021** |
+
+against the reference's **0.4736 +- 0.0037**. The 0.0710 difference is 0.0540 ground truth, 0.0140
+squared distances and 0.0030 residual - 1.2 standard errors, so **MVTec's pixel metric is reproduced
+within noise**.
+
+### screw
+
+Both implementations are near-random on screw and the paper's 0.739 is out of reach for either -
+the reference's best leak-assisted reading is 0.6195 +- 0.0431. It is not the training: at zero
+epochs, which is PatchCore on a frozen ViT, screw already scores 0.5638, and the per-epoch trajectory
+wanders between 0.22 and 0.86 without a trend in both implementations from the first epoch on.
+
+It is the feature grid. ViT-B/16 at 224 gives 14x14 patches, so one patch covers 73x73 pixels of the
+1024x1024 original while screw's defects are a few pixels wide. Swapping the backbone for
+`vit_base_patch8_224` - same input, same everything else, 28x28 patches - moves screw from 0.5638 to
+**0.6602** at zero epochs and from 0.6268 to **0.8660** at 25, past the paper's figure. The
+zero-epoch pair is the clean comparison, since it involves no training noise; the trained pair is one
+seed of a category whose single-model spread is +-0.2.
+
+That is a limit of UCAD as specified - the paper fixes ViT-B/16 at 224 - not of either
+implementation, and it is the one place where a change to the method would clearly pay.
 
 \* The reference stops training a category as soon as the cumulative ensemble reaches image AUROC
 exactly 1.0 on the test set:
@@ -293,8 +319,6 @@ profitable.
 
 ## Open
 
-- The MVTec pixel-AUPR difference has not been decomposed the way VisA's was; the ground-truth
-  convention plausibly carries a similar share of it.
 - The train/test split: our VisA copy holds every normal image with the first 20 per class held out
   for test, where the official `1cls.csv` splits normals about 90/10. Both implementations were
   compared on ours, so it does not affect the comparison, only the comparison to the paper.
