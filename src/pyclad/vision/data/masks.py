@@ -173,7 +173,7 @@ def _rectangle_mask(points: Optional[dict], canvas_shape: tuple[int, int]) -> np
 def _resize_binary_mask(
     mask: np.ndarray, resize_to: tuple[int, int], resize_mode: ResizeMode = "stretch"
 ) -> np.ndarray:
-    """Resize a 0/1 binary mask to ``resize_to`` using NEAREST, following the image convention."""
+    """Resize a 0/1 binary mask to ``resize_to`` using NEAREST."""
     if tuple(mask.shape) == tuple(resize_to) and resize_mode == "stretch":
         return mask.astype(np.uint8, copy=False)
 

@@ -170,19 +170,12 @@ class UCADModel(VisionModel):
         self.current_task_id += 1
 
     def _snapshot_epochs(self) -> set[int]:
-        """Which epochs (1-based) contribute a scorer, spread over training and always ending on the last.
-
-        The reference ensembles every epoch, so its members span the whole trajectory - including the early
-        epochs, which score better than the late ones. Taking only a trailing window would ensemble states that
-        are both correlated and already degraded.
-        """
         epochs, members = self.config.training_epochs, self.config.score_ensemble_epochs
         if members >= epochs:
             return set(range(1, epochs + 1))
         return {round(epochs / members * (index + 1)) for index in range(members)}
 
     def _snapshot_state(self, extraction_loader: DataLoader, dimension: int) -> TaskState:
-        """The current prompt together with the knowledge bank it produces."""
         self.backbone.eval()
         knowledge_features = self._extract_all_features(extraction_loader, use_prompt=True)
 

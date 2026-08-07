@@ -13,14 +13,6 @@ def resize_image(
     mode: ResizeMode = "stretch",
     resample: Image.Resampling = Image.Resampling.BILINEAR,
 ) -> Image.Image:
-    """Bring an image to ``target`` (height, width) under one of two conventions.
-
-    ``stretch`` fits the whole image into the target and distorts the aspect ratio. Anomaly
-    detection benchmarks are more often read the way torchvision's ``Resize(size)`` followed by
-    ``CenterCrop(size)`` reads them - the short side is scaled to the target and the centre is cropped
-    out - which keeps the aspect ratio but discards the edges of non-square images; that is
-    ``short_side_crop``, and it is what the reference UCAD implementation uses.
-    """
     target_height, target_width = target
     if mode == "stretch":
         return image.resize((target_width, target_height), resample)

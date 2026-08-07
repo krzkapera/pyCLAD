@@ -107,7 +107,6 @@ def build_concepts_dataset_from_samples(
 
 
 def _test_concept(category: str, samples: Sequence[VisionSample], loading: ImageLoading) -> Concept:
-    """A test concept carries its masks when the benchmark provides any, and only labels otherwise."""
     if not any(sample.mask_path is not None for sample in samples):
         return Concept(
             name=category,

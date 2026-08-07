@@ -28,9 +28,6 @@ class PrefixTuningPrompt(nn.Module):
         self.reset_prompt()
 
     def reset_prompt(self):
-        """Draws a fresh prompt from the module's own generator, on the CPU regardless of the
-        parameter's device, so that the initialization - the only trained state in UCAD - is
-        reproducible and independent of the global RNG."""
         with torch.no_grad():
             values = torch.empty(self.prompt.shape).uniform_(-1, 1, generator=self._generator)
             self.prompt.copy_(values)

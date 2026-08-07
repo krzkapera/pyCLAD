@@ -14,15 +14,6 @@ COLOR_MODES = ("rgb", "grayscale")
 
 @dataclass(frozen=True)
 class ImageLoading:
-    """How a benchmark turns the files on disk into arrays.
-
-    The four settings travel together because they have to agree: an image and its ground-truth mask
-    are only comparable pixel for pixel when both went through the same geometry, and a metric
-    computed across a mismatched pair measures the misalignment rather than the model. Keeping them
-    in one value makes that agreement structural instead of a convention every call site has to
-    remember.
-    """
-
     data_mode: DataMode = "numpy"
     resize_to: Optional[Tuple[int, int]] = None
     color_mode: ColorMode = "rgb"

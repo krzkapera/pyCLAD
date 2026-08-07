@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -15,8 +14,6 @@ from pyclad.metrics.continual.concepts_metric import (
 )
 from pyclad.output.output_writer import InfoProvider
 from pyclad.vision.data.vision_concept import VisionConcept
-
-logger = logging.getLogger(__name__)
 
 
 class VisionPixelConceptMetricCallback(Callback, InfoProvider):
@@ -72,13 +69,6 @@ class VisionPixelConceptMetricCallback(Callback, InfoProvider):
             y_pred=np.asarray([], dtype=np.uint8),
         )
         self._metric_matrix[learned][evaluated_concept.name] = value
-        logger.info(
-            "%s after learning %s, evaluated on %s: %.4f",
-            self._base_metric.name(),
-            learned,
-            evaluated_concept.name,
-            value,
-        )
 
     def info(self) -> Dict[str, Any]:
         if not self._evaluated_concepts:

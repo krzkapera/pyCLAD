@@ -6,8 +6,6 @@ import torch
 
 @dataclass
 class TaskState:
-    """One scorer for a concept: a prompt and the knowledge bank extracted under it."""
-
     prompt_state: torch.Tensor
     knowledge: torch.Tensor
 

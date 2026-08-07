@@ -339,13 +339,6 @@ class VisABenchmarkReader(CsvBenchmarkReader):
 
 
 class VisAFolderBenchmarkReader(FolderBenchmarkReader):
-    """VisA redistributed in a per-category folder layout instead of the official split file.
-
-    Anomalous test images share a single ``test/bad`` directory and their masks are named after
-    the image in ``ground_truth/bad``, without MVTec's per-defect-type directories and ``_mask``
-    suffix.
-    """
-
     def __init__(self, root: Union[str, Path]):
         super().__init__(root=root, name="visa_folder", mask_suffix="")
 

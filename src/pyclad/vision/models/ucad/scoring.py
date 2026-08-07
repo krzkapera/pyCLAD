@@ -5,15 +5,6 @@ from scipy.ndimage import gaussian_filter
 
 
 class NearestNeighborScorer:
-    """Nearest-neighbour anomaly scoring over a knowledge bank.
-
-    ``squared_distances`` reproduces the reference implementation, which reads its neighbour
-    distances straight out of ``faiss.IndexFlatL2`` and never takes their square root. The image
-    score is unaffected - it is the maximum over patches, and squaring preserves the order - but the
-    anomaly map is squared before it is upsampled and smoothed, and neither of those commutes with
-    squaring, so the two conventions give different pixel metrics on identical features.
-    """
-
     def __init__(
         self,
         num_nn: int = 1,
@@ -80,12 +71,6 @@ class NearestNeighborScorer:
 
 
 def combine_members(member_scores: list[np.ndarray], member_maps: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
-    """Averages several scorers over one evaluation set, each min-max normalized over that set first.
-
-    Members produced by different prompts live on different scales, so they are comparable only after
-    normalization; the reference implementation normalizes the same way. Normalizing over the whole
-    evaluation set makes the result transductive in the scores, though it uses no labels.
-    """
     if len(member_scores) == 1:
         return member_scores[0], member_maps[0]
 
