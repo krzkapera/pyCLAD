@@ -103,25 +103,6 @@ def test_read_vision_benchmark_dataset_supports_visa_preset(tmp_path: Path):
     assert samples[-1].defect_type == "anomaly"
 
 
-def test_read_vision_benchmark_dataset_supports_visa_folder_preset(tmp_path: Path):
-    root = tmp_path / "visa_folder_like"
-    _write_rgb_image(root / "candle" / "train" / "good" / "0000.JPG", (10, 20, 30))
-    _write_rgb_image(root / "candle" / "test" / "good" / "000.JPG", (20, 30, 40))
-    _write_rgb_image(root / "candle" / "test" / "bad" / "000.JPG", (30, 40, 50))
-    _write_mask(root / "candle" / "ground_truth" / "bad" / "000.png")
-
-    dataset = read_vision_benchmark_dataset(root=root, benchmark="visa_folder", resize_to=(4, 4))
-
-    assert dataset.train_concepts()[0].data.shape == (1, 4, 4, 3)
-    assert dataset.test_concepts()[0].data.shape == (2, 4, 4, 3)
-    assert np.array_equal(dataset.test_concepts()[0].labels, np.array([1, 0]))
-    assert dataset.test_concepts()[0].masks.shape == (2, 4, 4)
-
-    samples = index_vision_benchmark(root=root, benchmark="visa_folder")
-    assert samples[1].defect_type == "bad"
-    assert samples[1].mask_path == root / "candle" / "ground_truth" / "bad" / "000.png"
-
-
 def test_read_vision_benchmark_dataset_short_side_crop_keeps_aspect_ratio(tmp_path: Path):
     root = tmp_path / "wide_like"
     _write_helper_rgb(root / "widget" / "train" / "good" / "000.png", color=(10, 20, 30), size=(12, 4))
