@@ -2,16 +2,10 @@
 
 Usage: pixel_convention_effect.py     (configured through the environment, see ucad_probe.py)
 
-Two conventions separate pyCLAD's pixel AUPR from the reference's, and neither is the model:
-
-- the ground truth. pyCLAD resamples the mask with nearest-neighbour and counts every nonzero pixel;
-  the reference resamples it bilinearly and truncates to int, keeping only pixels that survive the
-  interpolation at full weight.
-- the anomaly map. pyCLAD scores patches by Euclidean distance; the reference reads squared
-  distances out of faiss and never takes their root, so its map is squared before it is upsampled
-  and smoothed.
-
-This trains once per concept and reports the full 2x2, which makes every comparison paired.
+pyCLAD resamples the ground-truth mask with nearest-neighbour and counts every nonzero pixel; the
+reference resamples it bilinearly and truncates to int, keeping only pixels that survive the
+interpolation at full weight. This trains once per concept and scores the same anomaly maps against
+both, which makes the comparison paired and exact.
 """
 
 import logging
