@@ -112,30 +112,30 @@ class TestMemoryBank:
     def test_stored_state_is_not_aliased_by_the_live_prompt(self):
         prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, num_heads=2, embed_dim=4)
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), states=[TaskState(prompt_state=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))])
-        stored = memory.get_states(0)[0].prompt_state.clone()
+        memory.add_task(0, key=torch.zeros(2, 4), state=TaskState(prompt_state=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4)))
+        stored = memory.get_state(0).prompt_state.clone()
 
         prompt.reset_prompt()
 
-        torch.testing.assert_close(memory.get_states(0)[0].prompt_state, stored)
+        torch.testing.assert_close(memory.get_state(0).prompt_state, stored)
 
     def test_restoring_a_task_does_not_mutate_the_bank(self):
         prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, num_heads=2, embed_dim=4)
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), states=[TaskState(prompt_state=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))])
-        stored = memory.get_states(0)[0].prompt_state.clone()
+        memory.add_task(0, key=torch.zeros(2, 4), state=TaskState(prompt_state=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4)))
+        stored = memory.get_state(0).prompt_state.clone()
 
-        prompt.set_prompt_state(memory.get_states(0)[0].prompt_state)
+        prompt.set_prompt_state(memory.get_state(0).prompt_state)
         prompt.reset_prompt()
 
-        torch.testing.assert_close(memory.get_states(0)[0].prompt_state, stored)
+        torch.testing.assert_close(memory.get_state(0).prompt_state, stored)
 
     def test_bank_rejects_more_tasks_than_configured(self):
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), states=[TaskState(prompt_state=torch.zeros(2), knowledge=torch.zeros(2, 4))])
+        memory.add_task(0, key=torch.zeros(2, 4), state=TaskState(prompt_state=torch.zeros(2), knowledge=torch.zeros(2, 4)))
 
         with pytest.raises(RuntimeError):
-            memory.add_task(1, key=torch.zeros(2, 4), states=[TaskState(prompt_state=torch.zeros(2), knowledge=torch.zeros(2, 4))])
+            memory.add_task(1, key=torch.zeros(2, 4), state=TaskState(prompt_state=torch.zeros(2), knowledge=torch.zeros(2, 4)))
 
 
 class TestCoreset:
@@ -167,12 +167,10 @@ class TestModelIntegration:
         model.memory.add_task(
             0,
             key=torch.zeros(4, model.config.target_embed_dimension),
-            states=[
-                TaskState(
-                    prompt_state=model.backbone.get_prompt_state(),
-                    knowledge=torch.zeros(4, model.config.target_embed_dimension),
-                )
-            ],
+            state=TaskState(
+                prompt_state=model.backbone.get_prompt_state(),
+                knowledge=torch.zeros(4, model.config.target_embed_dimension),
+            ),
         )
 
         torch.manual_seed(7)

@@ -18,7 +18,8 @@ import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
-from pyclad.vision.models.ucad import UCADConfig, UCADModel
+from pyclad.vision.models.ucad import UCADConfig
+from pyclad.vision.models.ucad.reference_ensemble import ReferenceEnsembleUCAD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -49,20 +50,9 @@ def normalized(values: np.ndarray) -> np.ndarray:
     return (values - low) / np.maximum(high - low, 1e-12)
 
 
-def member_outputs(model: UCADModel, concept) -> tuple[np.ndarray, np.ndarray]:
-    """Normalized scores and maps of every stored epoch, shaped (epochs, images[, H, W])."""
-    states = model.memory.get_states(model.memory.num_tasks - 1)
-    scores, maps = [], []
-    for state in states:
-        model.memory.tasks[-1].states = [state]
-        try:
-            results = model.predict(concept.data)
-        finally:
-            model.memory.tasks[-1].states = states
-        scores.append(results.anomaly_scores)
-        maps.append(results.score_maps)
-
-    return normalized(np.stack(scores)), normalized(np.stack(maps))
+def member_outputs(model: ReferenceEnsembleUCAD, concept) -> tuple[np.ndarray, np.ndarray]:
+    outputs = model.member_predictions(concept.data)
+    return normalized(np.stack([s for s, _ in outputs])), normalized(np.stack([m for _, m in outputs]))
 
 
 def main():
@@ -91,12 +81,11 @@ def main():
             batch_size=BATCH_SIZE,
             coreset_mode=CORESET_MODE,
             blur_sigma=BLUR_SIGMA,
-            score_ensemble_epochs=EPOCHS,
             seed=SEED,
             sam_masks_dir=MASKS_DIR,
             sam_images_root=ROOT,
         )
-        model = UCADModel(config)
+        model = ReferenceEnsembleUCAD(config, members=EPOCHS)
         model.fit(train_concept.data)
 
         scores, maps = member_outputs(model, test_concept)

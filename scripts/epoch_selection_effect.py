@@ -21,7 +21,8 @@ import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
-from pyclad.vision.models.ucad import UCADConfig, UCADModel
+from pyclad.vision.models.ucad import UCADConfig
+from pyclad.vision.models.ucad.reference_ensemble import ReferenceEnsembleUCAD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -37,18 +38,13 @@ EPOCHS = int(os.environ.get("UCAD_EPOCHS", "10"))
 INPUT_SIZE = (224, 224)
 
 
-def member_metrics(model: UCADModel, concept, member: int) -> tuple[float, float]:
+def member_metrics(model: ReferenceEnsembleUCAD, concept, member: int) -> tuple[float, float]:
     """Image AUROC and pixel AUPR when only one epoch's state scores the concept."""
-    states = model.memory.get_states(model.memory.num_tasks - 1)
-    model.memory.tasks[-1].states = [states[member]]
-    try:
-        results = model.predict(concept.data)
-    finally:
-        model.memory.tasks[-1].states = states
+    scores, maps = model.member_predictions(concept.data)[member]
 
     return (
-        float(roc_auc_score(concept.labels, results.anomaly_scores)),
-        float(average_precision_score(concept.masks.reshape(-1), results.score_maps.reshape(-1))),
+        float(roc_auc_score(concept.labels, scores)),
+        float(average_precision_score(concept.masks.reshape(-1), maps.reshape(-1))),
     )
 
 
@@ -66,11 +62,10 @@ def main():
             max_tasks=1,
             input_size=INPUT_SIZE,
             training_epochs=EPOCHS,
-            score_ensemble_epochs=EPOCHS,
             sam_masks_dir=os.environ.get(MASKS_VAR),
             sam_images_root=os.environ[ROOT_VAR],
         )
-        model = UCADModel(config)
+        model = ReferenceEnsembleUCAD(config, members=EPOCHS)
         model.fit(train_concept.data)
 
         per_epoch = [member_metrics(model, test_concept, member) for member in range(EPOCHS)]

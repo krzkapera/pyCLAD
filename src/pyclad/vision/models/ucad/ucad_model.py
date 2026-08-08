@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Dict, Optional, Union
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -17,11 +18,19 @@ from .features import patchcore_aggregate
 from .inputs import build_dataset
 from .memory import TaskMemoryBank, TaskState
 from .sam import MaskProvider, create_mask_provider
-from .reference_ensemble import combine_members, snapshot_epochs  # reference-protocol
 from .scoring import NearestNeighborScorer
 from .vit_prompted import PromptedViT
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TaskTraining:
+    train_loader: DataLoader
+    extraction_loader: DataLoader
+    key: torch.Tensor
+    dimension: int
+    optimizer: optim.Optimizer
 
 
 class UCADModel(VisionModel):
@@ -109,75 +118,79 @@ class UCADModel(VisionModel):
         )
 
     def fit(self, training_data):
+        task = self._begin_task(training_data)
+
+        for epoch in range(self.config.training_epochs):
+            self._train_epoch(task, epoch)
+
+        self._end_task(task, self._snapshot_state(task))
+
+    def _begin_task(self, training_data) -> TaskTraining:
         logger.info(f"Training UCAD on task {self.current_task_id}")
         train_loader = self._as_loader(training_data, shuffle=True)
         extraction_loader = self._sequential_view(train_loader)
 
         self.backbone.eval()
         key_features = self._extract_all_features(extraction_loader, use_prompt=False)
-
-        C = key_features.shape[-1]
-        key_flat = key_features.reshape(-1, C)
+        dimension = key_features.shape[-1]
 
         logger.info(f"Computing coreset for Task Key (target: {self.config.key_size})")
-        task_key = greedy_coreset_sampling(
-            key_flat, self.config.key_size, device=self.device, mode=self.config.coreset_mode
+        key = greedy_coreset_sampling(
+            key_features.reshape(-1, dimension), self.config.key_size, device=self.device,
+            mode=self.config.coreset_mode,
         )
 
         if self.config.reset_prompt_per_task:
             self.backbone.reset_prompt()
         elif self.memory.num_tasks > 0:
-            self.backbone.set_prompt_state(self.memory.get_states(self.memory.num_tasks - 1)[-1].prompt_state)
-
-        optimizer = optim.Adam(self.backbone.prompt_module.parameters(), lr=self.config.learning_rate)
+            self.backbone.set_prompt_state(self.memory.get_state(self.memory.num_tasks - 1).prompt_state)
 
         self.backbone.train()
-        # reference-protocol: one state is the method; more than one reproduces the authors' ensemble
-        wanted_epochs = snapshot_epochs(self.config.training_epochs, self.config.score_ensemble_epochs)
-        states: list[TaskState] = []
+        return TaskTraining(
+            train_loader=train_loader,
+            extraction_loader=extraction_loader,
+            key=key,
+            dimension=dimension,
+            optimizer=optim.Adam(self.backbone.prompt_module.parameters(), lr=self.config.learning_rate),
+        )
 
-        for epoch in range(self.config.training_epochs):
-            total_loss = 0.0
+    def _train_epoch(self, task: TaskTraining, epoch: int) -> None:
+        self.backbone.train()
+        total_loss = 0.0
 
-            for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{self.config.training_epochs}", leave=False):
-                images = batch["image"].to(self.device)
-                paths = batch["image_path"]
+        for batch in tqdm(task.train_loader, desc=f"Epoch {epoch+1}/{self.config.training_epochs}", leave=False):
+            images = batch["image"].to(self.device)
+            paths = batch["image_path"]
 
-                mask_labels = self.mask_provider.get_masks(paths, target_size=self.backbone.grid_size).to(self.device)
-                features = self.backbone.extract_features_with_prompt(images)
+            mask_labels = self.mask_provider.get_masks(paths, target_size=self.backbone.grid_size).to(self.device)
+            features = self.backbone.extract_features_with_prompt(images)
 
-                loss = structure_contrastive_loss(
-                    features, mask_labels, mode=self.config.loss_mode, temperature=self.config.scl_temperature
-                )
-                optimizer.zero_grad()
-                loss.backward()
+            loss = structure_contrastive_loss(
+                features, mask_labels, mode=self.config.loss_mode, temperature=self.config.scl_temperature
+            )
+            optimizer = task.optimizer
+            optimizer.zero_grad()
+            loss.backward()
 
-                torch.nn.utils.clip_grad_norm_(self.backbone.prompt_module.parameters(), self.config.grad_clip)
-                optimizer.step()
+            torch.nn.utils.clip_grad_norm_(self.backbone.prompt_module.parameters(), self.config.grad_clip)
+            optimizer.step()
 
-                total_loss += loss.item()
+            total_loss += loss.item()
 
-            logger.info(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}")
+        logger.info(f"Epoch {epoch+1} Loss: {total_loss / len(task.train_loader):.4f}")
 
-            if epoch + 1 in wanted_epochs:
-                states.append(self._snapshot_state(extraction_loader, C))
-                self.backbone.train()
-
-        if not states:
-            states.append(self._snapshot_state(extraction_loader, C))
-
-        self.memory.add_task(task_id=self.current_task_id, key=task_key, states=states)
-
+    def _end_task(self, task: TaskTraining, state: TaskState) -> None:
+        self.memory.add_task(task_id=self.current_task_id, key=task.key, state=state)
         logger.info(f"Task {self.current_task_id} added to memory bank.")
         self.current_task_id += 1
 
-    def _snapshot_state(self, extraction_loader: DataLoader, dimension: int) -> TaskState:
+    def _snapshot_state(self, task: TaskTraining) -> TaskState:
         self.backbone.eval()
-        knowledge_features = self._extract_all_features(extraction_loader, use_prompt=True)
+        knowledge_features = self._extract_all_features(task.extraction_loader, use_prompt=True)
 
         logger.info(f"Computing coreset for Task Knowledge (target: {self.config.knowledge_size})")
         knowledge = greedy_coreset_sampling(
-            knowledge_features.reshape(-1, dimension),
+            knowledge_features.reshape(-1, task.dimension),
             self.config.knowledge_size,
             device=self.device,
             mode=self.config.coreset_mode,
@@ -185,53 +198,46 @@ class UCADModel(VisionModel):
         return TaskState(prompt_state=self.backbone.get_prompt_state(), knowledge=knowledge)
 
     def predict(self, data) -> VisionPredictionResults:
+        scores, maps = self._score_dataset(data, [task.state for task in self.memory.tasks])
+        return VisionPredictionResults(y_pred=np.zeros_like(scores, dtype=int), anomaly_scores=scores, score_maps=maps)
+
+    def _score_dataset(self, data, states: Sequence[TaskState]) -> tuple[np.ndarray, np.ndarray]:
         self.backbone.eval()
         test_loader = self._as_loader(data, shuffle=False)
-
-        # reference-protocol: members > 1 only when the authors' epoch ensemble is requested
-        members = max(len(task.states) for task in self.memory.tasks)
-        member_scores: list[list[np.ndarray]] = [[] for _ in range(members)]
-        member_maps: list[list[np.ndarray]] = [[] for _ in range(members)]
+        scores: list[np.ndarray] = []
+        maps: list[np.ndarray] = []
 
         with torch.no_grad():
             for batch in tqdm(test_loader, desc="Predicting", leave=False):
                 images = batch["image"].to(self.device)
+                task_ids = self.memory.select_tasks(self._aggregate(self.backbone.extract_features(images)))
 
-                frozen_features = self._aggregate(self.backbone.extract_features(images))
-                task_ids = self.memory.select_tasks(frozen_features)
+                batch_scores, batch_maps = self._score_batch(images, task_ids, states)
+                scores.append(batch_scores)
+                maps.append(batch_maps)
 
-                for member in range(members):
-                    batch_scores = np.empty(len(images))
-                    batch_maps = np.empty((len(images), *self.config.input_size))
+        return np.concatenate(scores), np.concatenate(maps)
 
-                    for task_idx in task_ids.unique().tolist():
-                        selected = task_ids == task_idx
-                        states = self.memory.get_states(task_idx)
-                        state = states[min(member, len(states) - 1)]
-                        self.backbone.set_prompt_state(state.prompt_state)
+    def _score_batch(
+        self, images: torch.Tensor, task_ids: torch.Tensor, states: Sequence[TaskState]
+    ) -> tuple[np.ndarray, np.ndarray]:
+        batch_scores = np.empty(len(images))
+        batch_maps = np.empty((len(images), *self.config.input_size))
 
-                        prompted_features = self._aggregate(
-                            self.backbone.extract_features_with_prompt(images[selected])
-                        )
-                        img_scores, maps = self.scorer.predict(
-                            test_features=prompted_features,
-                            knowledge_bank=state.knowledge.to(self.device),
-                            input_size=self.config.input_size,
-                        )
+        for task_idx in task_ids.unique().tolist():
+            selected = task_ids == task_idx
+            state = states[task_idx]
+            self.backbone.set_prompt_state(state.prompt_state)
 
-                        selected_np = selected.cpu().numpy()
-                        batch_scores[selected_np] = img_scores
-                        batch_maps[selected_np] = maps
+            prompted_features = self._aggregate(self.backbone.extract_features_with_prompt(images[selected]))
+            img_scores, task_maps = self.scorer.predict(
+                test_features=prompted_features,
+                knowledge_bank=state.knowledge.to(self.device),
+                input_size=self.config.input_size,
+            )
 
-                    member_scores[member].append(batch_scores)
-                    member_maps[member].append(batch_maps)
+            selected_np = selected.cpu().numpy()
+            batch_scores[selected_np] = img_scores
+            batch_maps[selected_np] = task_maps
 
-        image_scores, anomaly_maps = combine_members(
-            [np.concatenate(scores) for scores in member_scores],
-            [np.concatenate(maps) for maps in member_maps],
-        )
-        return VisionPredictionResults(
-            y_pred=np.zeros_like(image_scores, dtype=int),
-            anomaly_scores=image_scores,
-            score_maps=anomaly_maps,
-        )
+        return batch_scores, batch_maps

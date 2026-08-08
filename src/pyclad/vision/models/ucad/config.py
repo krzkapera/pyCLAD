@@ -68,14 +68,6 @@ class UCADConfig(BaseModel):
         default=1024, description="Aggregated feature dimension (used when patchsize > 1)"
     )
 
-    # reference-protocol: temporary, see reference_ensemble.py
-    score_ensemble_epochs: int = Field(
-        default=1,
-        description="How many training epochs contribute a prompt/knowledge pair to the concept's score, spread "
-        "evenly over training and always including the last: 1 evaluates the final epoch alone, higher values "
-        "average the normalized scores of that many epochs, as the reference implementation does over all of "
-        "them (it additionally picks the best epoch by test AUROC, which this does not)",
-    )
 
     # Training settings
     training_epochs: int = Field(default=25, description="Number of training epochs per concept")

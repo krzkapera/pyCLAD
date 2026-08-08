@@ -23,7 +23,8 @@ from sklearn.metrics import average_precision_score
 
 from pyclad.vision.data.benchmarks.readers import index_vision_benchmark, read_vision_benchmark_dataset
 from pyclad.vision.data.geometry import resize_image
-from pyclad.vision.models.ucad import UCADConfig, UCADModel
+from pyclad.vision.models.ucad import UCADConfig
+from pyclad.vision.models.ucad.reference_ensemble import ReferenceEnsembleUCAD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -97,12 +98,11 @@ def main():
             batch_size=BATCH_SIZE,
             coreset_mode=CORESET_MODE,
             blur_sigma=BLUR_SIGMA,
-            score_ensemble_epochs=EPOCHS,
             seed=SEED,
             sam_masks_dir=MASKS_DIR,
             sam_images_root=ROOT,
         )
-        model = UCADModel(config)
+        model = ReferenceEnsembleUCAD(config, members=EPOCHS)
         model.fit(train_concept.data)
 
         truths = {"ours": test_concept.masks, "reference": reference_masks_for(test_concept.name, samples)}

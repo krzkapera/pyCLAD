@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import List
 
 import torch
 
@@ -17,7 +17,7 @@ class TaskState:
 class TaskMemory:
     task_id: int
     key: torch.Tensor
-    states: List[TaskState]  # reference-protocol: the method stores exactly one
+    state: TaskState
 
 
 class TaskMemoryBank:
@@ -25,19 +25,11 @@ class TaskMemoryBank:
         self.max_tasks = max_tasks
         self.tasks: List[TaskMemory] = []
 
-    def add_task(self, task_id: int, key: torch.Tensor, states: Sequence[TaskState]):
+    def add_task(self, task_id: int, key: torch.Tensor, state: TaskState):
         if len(self.tasks) >= self.max_tasks:
             raise RuntimeError(f"Memory bank full. Cannot exceed {self.max_tasks} tasks.")
-        if not states:
-            raise ValueError("A task needs at least one prompt/knowledge state")
 
-        self.tasks.append(
-            TaskMemory(
-                task_id=task_id,
-                key=key.cpu(),
-                states=[state.on_cpu() for state in states],
-            )
-        )
+        self.tasks.append(TaskMemory(task_id=task_id, key=key.cpu(), state=state.on_cpu()))
 
     def task_distances(self, query_features: torch.Tensor) -> torch.Tensor:
         B, Np, C = query_features.shape
@@ -54,8 +46,8 @@ class TaskMemoryBank:
     def select_tasks(self, query_features: torch.Tensor) -> torch.Tensor:
         return self.task_distances(query_features).argmin(dim=1)
 
-    def get_states(self, task_idx: int) -> List[TaskState]:
-        return self.tasks[task_idx].states
+    def get_state(self, task_idx: int) -> TaskState:
+        return self.tasks[task_idx].state
 
     @property
     def num_tasks(self) -> int:

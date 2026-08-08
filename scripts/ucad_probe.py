@@ -36,6 +36,7 @@ from pyclad.vision.callbacks.vision_pixel_concept_metric_callback import (
 from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
 from pyclad.vision.metrics.pixel_average_precision import PixelAveragePrecision
 from pyclad.vision.models.ucad import UCADConfig, UCADModel
+from pyclad.vision.models.ucad.reference_ensemble import ReferenceEnsembleUCAD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -94,13 +95,14 @@ def main():
         reweighting_num_nn=REWEIGHTING,
         knowledge_size=KNOWLEDGE_SIZE,
         coreset_mode=CORESET_MODE,
-        score_ensemble_epochs=ENSEMBLE_EPOCHS,
         blur_sigma=BLUR_SIGMA,
         seed=SEED,
         sam_masks_dir=MASKS_DIR,
         sam_images_root=ROOT if MASKS_DIR else None,
     )
-    model = UCADModel(config)
+    model = (
+        ReferenceEnsembleUCAD(config, members=ENSEMBLE_EPOCHS) if ENSEMBLE_EPOCHS > 1 else UCADModel(config)
+    )
     strategy = NaiveStrategy(model)
 
     callbacks = [
