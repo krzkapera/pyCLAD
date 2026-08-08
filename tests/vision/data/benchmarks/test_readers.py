@@ -11,7 +11,6 @@ from pyclad.vision.data.benchmarks.readers import (
     MVTecBenchmarkReader,
     MPDDBenchmarkReader,
     VisABenchmarkReader,
-    VisAFolderBenchmarkReader,
     available_vision_benchmarks,
     build_vision_benchmark_reader,
     index_vision_benchmark,
@@ -43,7 +42,6 @@ def test_read_vision_benchmark_dataset_supports_mvtec_preset(tmp_path: Path):
         "mpdd",
         "mvtec",
         "visa",
-        "visa_folder",
     ]
     assert len(dataset.train_concepts()) == 1
     assert len(dataset.test_concepts()) == 1
@@ -224,7 +222,6 @@ def test_build_vision_benchmark_reader_returns_dataset_specific_reader(tmp_path:
         "mpdd": MPDDBenchmarkReader,
         "mvtec": MVTecBenchmarkReader,
         "visa": VisABenchmarkReader,
-        "visa_folder": VisAFolderBenchmarkReader,
     }
 
     for benchmark_name, expected_type in expected_types.items():

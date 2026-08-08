@@ -38,8 +38,6 @@ class ImagePathDataset(Dataset):
 
 
 class ImageArrayDataset(Dataset):
-    """Images already in memory as ``(N, H, W, C)``: uint8 in 0..255 or floating point in 0..1."""
-
     def __init__(
         self,
         images: np.ndarray,

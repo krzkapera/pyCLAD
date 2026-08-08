@@ -1,32 +1,57 @@
-# UCAD: the paper, the authors' code, and pyCLAD
+# UCAD in pyCLAD: what you get, and how it differs from the paper and the authors' code
 
-Three things carry the name UCAD and they are not the same: the method described in Liu et al.,
-AAAI 2024; the implementation the authors released; and pyCLAD's. This records where they diverge and
-what each divergence is worth, so that a number can always be traced to the thing that produced it.
+pyCLAD ships an implementation of UCAD (Liu et al., *Unsupervised Continual Anomaly Detection with
+Contrastively-learned Prompt*, AAAI 2024). If you compare its output against the numbers in that
+paper you will find them lower, and this explains why: the published figures rest on two evaluation
+mechanisms that the paper does not describe and that pyCLAD does not apply by default. Neither is a
+bug in either implementation - they are choices about how a run is scored, and you should know which
+one you are looking at.
 
-Measurements come from three seeds per side on VisA (12 categories) and MVTec AD (15), at the
-reference's own configuration. Where a figure has no error bar it comes from a single run and is
-labelled as such.
+Read this before quoting a number.
 
-## 1. The paper against the authors' code
+## What pyCLAD's UCAD does
 
-Everything in this section is in the released code and absent from the paper.
+Per concept it prefix-tunes a prompt on a frozen ViT-B/16 for 25 epochs with the structure-based
+contrastive loss, then stores one prompt and one coreset-reduced bank of normal-image features. At
+test time it routes each image to a concept by nearest key, scores its patches by distance to that
+concept's bank, and reports the maximum as the image score and the upsampled, smoothed field as the
+anomaly map.
 
-### Ensembling the epochs
+That is the method as the paper specifies it, and `UCADModel` implements nothing else. One prompt and
+one bank per concept, matching the paper's own memory accounting: "a key of size (15, 196, 1024), a
+prompt of size (15, 7, 768), and knowledge of size (15, 196, 1024), with an overall size of
+approximately 23.28MB".
 
-After every epoch the code scores the whole test set, rescales that epoch's scores to 0..1 across the
-test set, and averages every epoch so far. The reported number is therefore the mean opinion of 25
-models, not the score of one.
+```python
+from pyclad.vision.models.ucad import UCADConfig, UCADModel
 
-The paper excludes this by its own accounting: it states a memory of "a key of size (15, 196, 1024),
-a prompt of size (15, 7, 768), and knowledge of size (15, 196, 1024), with an overall size of
-approximately 23.28MB". The first dimension is the 15 tasks, so one key and one bank per task; 25
-banks per task would be roughly 290MB and would contradict the compactness the paper argues for.
+model = UCADModel(UCADConfig(max_tasks=len(dataset.train_concepts()), input_size=(224, 224)))
+```
 
-Worth **+0.129 image AUROC** on VisA (0.7045 +- 0.0353 for a single model against 0.8335 +- 0.0087
-for the ensemble), and it cuts the seed spread fourfold.
+Expect roughly **0.70 image AUROC on VisA**, not the 0.874 the paper reports. The gap is the two
+mechanisms below.
 
-### Selecting the epoch on the test set
+## The authors' evaluation protocol
+
+The released implementation does two things inside its training loop that change the reported number.
+
+### It ensembles the epochs
+
+After *every* epoch it scores the whole test set, rescales that epoch's scores to 0..1 across the
+test set, and averages every epoch so far. The number it reports is therefore the mean opinion of 25
+different models - each epoch's prompt with the bank extracted under it - not the score of the model
+you would deploy.
+
+This uses no labels, so it is legitimate as a scoring scheme; it is simply not the method the paper
+describes, and the paper's memory figure rules it out. It is worth **+0.129 image AUROC** on VisA
+(0.7045 +- 0.0353 for one model against 0.8335 +- 0.0087 for the ensemble over three seeds), and it
+cuts the seed-to-seed spread fourfold, because a single prompt's quality swings wildly between
+epochs.
+
+If you want to reproduce the authors' numbers, `scripts/reference_ensemble.py` subclasses the model
+to do this. It is deliberately not in the library.
+
+### It picks the epoch by looking at the test labels
 
 ```python
 if (auroc > pr_auroc):
@@ -34,115 +59,96 @@ if (auroc > pr_auroc):
     prompt_list[dataloader_count] = PatchCore.prompt_model.get_cur_prompt()
 ```
 
-The epoch whose cumulative ensemble scores best **on the test set** is the one reported, and its state
-is what enters the concept memory. There is no validation split. Worth **+0.0436 image AUROC** to the
-reference on VisA and +0.0390 to pyCLAD when the same rule is applied to its runs.
+Of the 25 cumulative ensembles - after epoch 1, after epoch 2, and so on - it reports the one whose
+image AUROC on the **test set** is highest, and that state is what enters the concept memory. There
+is no validation split; the choice is made on the data the result is then reported on.
 
-The epochs it picks are unstable across seeds - candle 2/0/3, capsules 10/24/22, cashew 15/23/24 -
-which is what fitting noise looks like. The metric it does not optimise gets slightly worse: pixel
-AUPR falls from 0.3280 to 0.3269.
+This is a leak. It is worth **+0.0436 image AUROC** to the reference on VisA. Two symptoms show it is
+fitting noise rather than finding a genuine stopping point: the epoch it picks is unstable across
+seeds (candle 2/0/3, capsules 10/24/22, cashew 15/23/24), and the metric it does not optimise gets
+slightly worse - pixel AUPR falls from 0.3280 to 0.3269.
 
-### Stopping a category early
+pyCLAD never does this. The analysis scripts compute it only so that the reference's own protocol can
+be reported beside a leak-free one.
+
+### It stops a category the moment it scores perfectly
 
 ```python
 if (auroc == 1):
     break
 ```
 
-Training stops the moment the test-set image AUROC reaches exactly 1.0. On MVTec this fires on five
-categories - bottle and leather after one epoch, toothbrush after one or two, tile after one to
-three, hazelnut after three to eight - so for those the reference has no leak-free reading at all:
-the stopping point itself was chosen with test labels. No VisA category reaches 1.0.
+Training ends as soon as the test-set image AUROC reaches exactly 1.0. This is the same leak in a
+sharper form: not only the reported epoch but the amount of training is chosen from the test labels.
 
-### Squared distances
+On MVTec it fires on five of fifteen categories - bottle and leather after one epoch, toothbrush
+after one or two, tile after one to three, hazelnut after three to eight. For those categories the
+reference has no leak-free reading at all, and its "before selection" and "after selection" numbers
+are the same by construction. No VisA category reaches 1.0, so VisA comparisons are unaffected.
 
-Neighbour distances are read out of `faiss.IndexFlatL2`, which returns **squared** L2, and no square
-root is taken anywhere. The image score is the maximum over patches and squaring preserves order, so
-image AUROC is untouched; the anomaly map is squared before it is upsampled and smoothed, and neither
-operation commutes with squaring.
+### What the three protocols give
 
-### The ground-truth mask
+VisA, twelve categories, image AUROC, three seeds:
 
-Masks are resized bilinearly and then truncated to int, so only pixels the interpolation left at full
-weight count as positive.
+| | pyCLAD | the reference |
+|---|---|---|
+| one model, no ensembling - the paper's method | 0.7045 +- 0.0353 | - |
+| ensemble of 25 epochs, no test labels | 0.8335 +- 0.0087 | 0.8287 +- 0.0042 |
+| ensemble plus the epoch chosen on the test set | 0.8725 +- 0.0046 | 0.8723 +- 0.0026 |
+| published | | 0.874 |
 
-### Reweighting
+The published figure needs both mechanisms. The reference's own leak-free average is 0.045 below
+what it reports.
 
-Equations 5-6 of the paper describe reweighting the image score by the neighbourhood of the nearest
-bank vector. The scoring path in the released code does not apply it; the image score is the plain
-maximum over patch scores.
+## Where pyCLAD deliberately differs from the authors' code
 
-### The prompt shape
+A line-by-line comparison found the two equivalent in every computational step: the input transform,
+the backbone, prefix tuning of the same shape and initialisation, the feature layer, patch
+aggregation, the contrastive loss, the optimizer and schedule, the coreset, nearest-neighbour
+scoring, and the map rescaling. What differs is deliberate:
 
-The paper reports a prompt of size (15, 7, 768). The code constructs the model with
-`prompt_length=1`, prefix tuning on all twelve layers, which is a different shape. We did not resolve
-which the reported numbers correspond to.
+| | the reference | pyCLAD |
+|---|---|---|
+| patch score | squared distance, read from `faiss.IndexFlatL2` with no square root taken | Euclidean distance |
+| ground-truth mask | resized bilinearly, then truncated to int, so only pixels left at full weight count | resized with nearest-neighbour, every nonzero pixel counts |
+| prompt between concepts | carried over from the previous concept | reset per concept (`reset_prompt_per_task`) |
+| randomness | the coreset draws from the global RNG, so a seed does not fix a run | every draw comes from `UCADConfig.seed`; two runs of one configuration agree exactly |
+| epoch ensembling and selection | always | never in the library |
 
-### Prompts across tasks
+The first two are metric conventions, not model quality: they change what is measured. The squared
+distance leaves image AUROC untouched, since the image score is the maximum over patches and squaring
+preserves order, but it changes the anomaly map, which is squared before being upsampled and
+smoothed. Together the two are worth 0.040 of pixel AUPR on VisA and 0.068 on MVTec in pyCLAD's
+favour; equalise them and the two implementations agree to 0.006 and 0.003 respectively.
 
-The released code never re-initialises the prompt between concepts, so task *k* starts from wherever
-task *k-1* ended - and from its last epoch, not from the epoch it selected.
+## Things worth knowing before you tune it
 
-### A trap in the repository
+**The contrastive loss does not help on these benchmarks.** After one epoch the prompted features are
+99.9% cosine-identical to the frozen ones, so the model is PatchCore on a frozen ViT. After 25 epochs
+they have moved a long way in the wrong direction - mean pairwise cosine falls from 0.42 to 0.18 and
+effective rank from 297 to 217 - which erodes the locality nearest-neighbour scoring depends on.
+Per-epoch image AUROC then swings by up to 0.42 within one run, and that instability is exactly what
+the epoch ensemble smooths over and the epoch selection exploits.
 
-`args_dict.npy` in the released repository contains `length=5` and `batch_size=24`. Neither feeds the
-model: the prompt is constructed with `prompt_length=1` in `patchcore/patchcore.py`, and the data
-loader takes its batch size from a click default of 8 in the entry point. The paper independently
-states batch size 8. Both values in that file misled this work at some point.
+**MVTec's screw is out of reach for the method as specified.** Both implementations are near-random
+on it and neither approaches the paper's 0.739. It is not the training: with zero epochs, which is
+PatchCore on a frozen backbone, screw already scores 0.5638. It is the feature grid - ViT-B/16 at 224
+gives 14x14 patches, one patch covering 73x73 pixels of the 1024x1024 original, while screw's defects
+are a few pixels wide. Swapping the backbone for `vit_base_patch8_224`, which gives 28x28 patches at
+the same input size, moves it to 0.6602 at zero epochs and 0.8660 after 25.
 
-## 2. The authors' code against pyCLAD
+**`args_dict.npy` in the authors' repository is misleading.** It contains `length=5` and
+`batch_size=24`; neither reaches the model. The prompt is built with `prompt_length=1` in
+`patchcore/patchcore.py`, and the batch size comes from a click default of 8, which is also what the
+paper states.
 
-A line-by-line trace found these equivalent: the input transform (`Resize(224)` + `CenterCrop(224)` +
-ImageNet normalisation, PIL bilinear), the ViT-B/16 backbone, prefix tuning of shape
-(12, 2, 1, 12, 64) initialised uniform(-1, 1) on all twelve layers, block 5 patch tokens as features,
-`patchsize=1` followed by `adaptive_avg_pool1d(768 -> 1024)`, the contrastive loss term for term at
-temperature 0.5, Adam at 5e-4 with a constant schedule and gradient clip 1.0, a greedy coreset over a
-random 128-dimensional projection from 10 starting points, 1-NN L2 scoring with the image score as
-the patch maximum, bilinear rescaling to 224 followed by a Gaussian at sigma 4, and the per-epoch
-min-max normalisation before averaging.
+**The paper's prompt shape does not match the released code.** The paper reports a prompt of size
+(15, 7, 768); the code builds prefix tuning with `prompt_length=1` on twelve layers. We could not
+determine which the published numbers correspond to.
 
-What pyCLAD does differently, and on purpose:
+## Reproducing the tables
 
-| | the reference | pyCLAD | effect |
-|---|---|---|---|
-| patch score | squared distance, from faiss without a root | Euclidean distance | pixel AUPR only: +0.0087 VisA, +0.0140 MVTec in pyCLAD's favour |
-| ground-truth mask | bilinear, then truncated to int | nearest-neighbour, every nonzero pixel counts | +0.0310 VisA, +0.0540 MVTec in pyCLAD's favour |
-| epoch ensembling | always on | not in the library; `scripts/reference_ensemble.py` subclasses the model for reproduction | +0.129 image on VisA when enabled |
-| epoch selection | reports the best epoch by test AUROC | never; the analysis scripts compute it only to report the reference's own protocol beside a leak-free one | +0.0436 to the reference |
-| early stop at AUROC 1.0 | yes | no | five MVTec categories |
-| prompt between tasks | carried over | reset per concept by default (`reset_prompt_per_task`) | not isolated |
-| randomness | the coreset draws from the global RNG, so a seed does not fix a run | every draw comes from `UCADConfig.seed` | two runs of one configuration now agree exactly |
-
-The squared-distance and mask conventions are metric conventions rather than model quality: they
-change what is measured, not how well the model localises. The first was measured with a temporary
-scorer variant which has since been removed; the numbers above are what it produced.
-
-## 3. What this means for the published figures
-
-| VisA, 12 categories, image AUROC | value |
-|---|---|
-| the method as the paper describes it, single model | 0.7045 +- 0.0353 |
-| plus the epoch ensemble, no test labels | 0.8335 +- 0.0087 |
-| plus selecting the epoch on the test set | 0.8725 +- 0.0046 |
-| published | 0.874 |
-
-The published figure needs both mechanisms, and neither is in the paper. The reference's own
-leak-free average, 0.8287 +- 0.0042, is 0.045 below what it reports.
-
-pyCLAD reproduces the reference once it scores the same way: image AUROC to 0.0002 on VisA and 0.005
-on MVTec, pixel AUPR to 0.006 and 0.003 after both conventions are equalised. Per-category tables are
-in `ucad_visa_reproduction.md`.
-
-## 4. Not reproduced by either implementation
-
-MVTec's screw. Both are near-random and the paper's 0.739 is out of reach; the reference's best
-leak-assisted reading is 0.6195 +- 0.0431. It is not the training - at zero epochs, which is
-PatchCore on a frozen ViT, screw already scores 0.5638, and the per-epoch trajectory wanders between
-0.22 and 0.86 without a trend from the first epoch on. It is the feature grid: ViT-B/16 at 224 gives
-14x14 patches, one patch covering 73x73 pixels of the 1024x1024 original, while screw's defects are a
-few pixels wide. Swapping the backbone for `vit_base_patch8_224` - same input, 28x28 patches - moves
-screw from 0.5638 to 0.6602 at zero epochs and from 0.6268 to 0.8660 at 25. The zero-epoch pair is
-the clean comparison; the trained pair is one seed of a category whose single-model spread is +-0.2.
-
-That is a limit of UCAD as specified, since the paper fixes ViT-B/16 at 224, not of either
-implementation.
+`docs/ucad_visa_reproduction.md` has the per-category results for both implementations under both
+protocols on VisA and MVTec. The scripts that produce them are in `scripts/`:
+`protocol_compare.py` reports both protocols from one training run, `reference_ensemble.py` holds
+the ensemble, and `pixel_convention_effect.py` scores one run against both ground-truth conventions.

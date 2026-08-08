@@ -111,7 +111,6 @@ class UCADModel(VisionModel):
         )
 
     def _sequential_view(self, loader: DataLoader) -> DataLoader:
-        """Coreset selection is order-dependent, so it must not see the shuffled training order."""
         return DataLoader(
             loader.dataset,
             batch_size=self.config.batch_size,

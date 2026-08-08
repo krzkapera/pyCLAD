@@ -19,13 +19,14 @@ import os
 import numpy as np
 import torch
 
+from visa_layout import VISA_FOLDER_LAYOUT
 from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
 from pyclad.vision.models.ucad import UCADConfig, UCADModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-BENCHMARKS = {"visa": ("VISA_ROOT", "VISA_MASKS_ROOT", "visa_folder"), "mvtec": ("MVTEC_ROOT", "MVTEC_MASKS_ROOT", "mvtec")}
+BENCHMARKS = {"visa": ("VISA_ROOT", "VISA_MASKS_ROOT", VISA_FOLDER_LAYOUT), "mvtec": ("MVTEC_ROOT", "MVTEC_MASKS_ROOT", "mvtec")}
 DATASET = os.environ.get("UCAD_DATASET", "visa")
 ROOT_VAR, MASKS_VAR, BENCHMARK = BENCHMARKS[DATASET]
 CATEGORY = os.environ.get("UCAD_CATEGORY", "candle")

@@ -17,6 +17,7 @@ from pyclad.strategies.baselines.naive import NaiveStrategy
 from pyclad.vision.callbacks.vision_pixel_concept_metric_callback import (
     VisionPixelConceptMetricCallback,
 )
+from visa_layout import VISA_FOLDER_LAYOUT
 from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
 from pyclad.vision.metrics.pixel_average_precision import PixelAveragePrecision
 from pyclad.vision.models.ucad import UCADConfig, UCADModel
@@ -33,7 +34,7 @@ CATEGORIES = ["candle", "capsules"]
 def main():
     dataset = read_vision_benchmark_dataset(
         root=VISA_ROOT,
-        benchmark="visa_folder",
+        benchmark=VISA_FOLDER_LAYOUT,
         dataset_name="VisA-smoke",
         categories=CATEGORIES,
         data_mode="paths",

@@ -33,6 +33,7 @@ from pyclad.strategies.baselines.naive import NaiveStrategy
 from pyclad.vision.callbacks.vision_pixel_concept_metric_callback import (
     VisionPixelConceptMetricCallback,
 )
+from visa_layout import VISA_FOLDER_LAYOUT
 from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
 from pyclad.vision.metrics.pixel_average_precision import PixelAveragePrecision
 from pyclad.vision.models.ucad import UCADConfig, UCADModel
@@ -42,7 +43,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(__name__)
 
 BENCHMARKS = {
-    "visa": ("VISA_ROOT", "VISA_MASKS_ROOT", "visa_folder"),
+    "visa": ("VISA_ROOT", "VISA_MASKS_ROOT", VISA_FOLDER_LAYOUT),
     "mvtec": ("MVTEC_ROOT", "MVTEC_MASKS_ROOT", "mvtec"),
 }
 
