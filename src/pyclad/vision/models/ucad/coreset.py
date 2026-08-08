@@ -10,8 +10,6 @@ def _project(features: torch.Tensor, target_dim: int, generator: torch.Generator
     if features.shape[1] == target_dim:
         return features
 
-    # Same distribution as the reference's unbiased nn.Linear, drawn from `generator` instead of
-    # the global RNG so that a run is reproducible from UCADConfig.seed alone.
     bound = 1.0 / math.sqrt(features.shape[1])
     projection = torch.empty(features.shape[1], target_dim).uniform_(-bound, bound, generator=generator)
     return features @ projection.to(features.device)
@@ -40,12 +38,6 @@ def greedy_coreset_sampling(
     num_starting_points: int = 10,
     projection_dim: int = 128,
 ) -> torch.Tensor:
-    """Selects target_size representative vectors out of features.
-
-    'exact' seeds with the first vector and measures distances in the original feature space.
-    'approximate' seeds with the mean distance to random starting points and measures distances
-    in a randomly projected space; both of those draws come from `generator`.
-    """
     if features.shape[0] <= target_size:
         return features
 

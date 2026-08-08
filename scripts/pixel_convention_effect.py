@@ -24,7 +24,7 @@ from sklearn.metrics import average_precision_score
 from pyclad.vision.data.benchmarks.readers import index_vision_benchmark, read_vision_benchmark_dataset
 from pyclad.vision.data.geometry import resize_image
 from pyclad.vision.models.ucad import UCADConfig
-from pyclad.vision.models.ucad.reference_ensemble import ReferenceEnsembleUCAD
+from reference_ensemble import ReferenceEnsembleUCAD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)

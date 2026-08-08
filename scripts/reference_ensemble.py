@@ -6,10 +6,9 @@
 # averages every epoch so far - so the number it reports is the mean opinion of 25 different models
 # rather than the score of one. Reproducing their published figures requires scoring the same way.
 #
-# Nothing of this leaks into UCADModel. Everything lives in this file: the model is subclassed, the
-# per-epoch states are kept here, and the base memory bank still holds the single state the method
-# defines - the last one - so task routing and the continual scenario are unaffected. Deleting this
-# file removes the protocol entirely.
+# Nothing of this is in the library. The model is subclassed here, the per-epoch states are kept
+# here, and the base memory bank still holds the single prompt and bank the method defines - the
+# last one - so task routing and the continual scenario are unaffected.
 
 from typing import List, Sequence
 
@@ -17,31 +16,30 @@ import numpy as np
 
 from pyclad.vision.prediction_results import VisionPredictionResults
 
-from .memory import TaskState
-from .ucad_model import TaskTraining, UCADModel
+from pyclad.vision.models.ucad.ucad_model import PromptedBank, TaskTraining, UCADModel
 
 
 class ReferenceEnsembleUCAD(UCADModel):
     def __init__(self, config, members: int, mask_provider=None):
         super().__init__(config, mask_provider=mask_provider)
         self.members = members
-        self._task_members: List[List[TaskState]] = []
+        self._task_members: List[List[PromptedBank]] = []
 
     def fit(self, training_data):
         task = self._begin_task(training_data)
         wanted = snapshot_epochs(self.config.training_epochs, self.members)
-        states: List[TaskState] = []
+        states: List[PromptedBank] = []
 
         for epoch in range(self.config.training_epochs):
             self._train_epoch(task, epoch)
             if epoch + 1 in wanted:
-                states.append(self._snapshot_state(task))
+                states.append(self._snapshot(task))
 
         if not states:
-            states.append(self._snapshot_state(task))
+            states.append(self._snapshot(task))
 
         self._task_members.append(states)
-        self._end_task(task, states[-1])
+        self._end_task(task, *states[-1])
 
     def member_predictions(self, data) -> List[tuple[np.ndarray, np.ndarray]]:
         members = max(len(states) for states in self._task_members)

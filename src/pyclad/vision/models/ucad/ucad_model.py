@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -16,12 +16,14 @@ from .contrastive import structure_contrastive_loss
 from .coreset import greedy_coreset_sampling
 from .features import patchcore_aggregate
 from .inputs import build_dataset
-from .memory import TaskMemoryBank, TaskState
+from .memory import TaskMemoryBank
 from .sam import MaskProvider, create_mask_provider
 from .scoring import NearestNeighborScorer
 from .vit_prompted import PromptedViT
 
 logger = logging.getLogger(__name__)
+
+PromptedBank = Tuple[torch.Tensor, torch.Tensor]
 
 
 @dataclass
@@ -124,7 +126,7 @@ class UCADModel(VisionModel):
         for epoch in range(self.config.training_epochs):
             self._train_epoch(task, epoch)
 
-        self._end_task(task, self._snapshot_state(task))
+        self._end_task(task, *self._snapshot(task))
 
     def _begin_task(self, training_data) -> TaskTraining:
         logger.info(f"Training UCAD on task {self.current_task_id}")
@@ -144,7 +146,7 @@ class UCADModel(VisionModel):
         if self.config.reset_prompt_per_task:
             self.backbone.reset_prompt()
         elif self.memory.num_tasks > 0:
-            self.backbone.set_prompt_state(self.memory.get_state(self.memory.num_tasks - 1).prompt_state)
+            self.backbone.set_prompt_state(self.memory.get_task(self.memory.num_tasks - 1).prompt)
 
         self.backbone.train()
         return TaskTraining(
@@ -180,12 +182,12 @@ class UCADModel(VisionModel):
 
         logger.info(f"Epoch {epoch+1} Loss: {total_loss / len(task.train_loader):.4f}")
 
-    def _end_task(self, task: TaskTraining, state: TaskState) -> None:
-        self.memory.add_task(task_id=self.current_task_id, key=task.key, state=state)
+    def _end_task(self, task: TaskTraining, prompt: torch.Tensor, knowledge: torch.Tensor) -> None:
+        self.memory.add_task(task_id=self.current_task_id, key=task.key, prompt=prompt, knowledge=knowledge)
         logger.info(f"Task {self.current_task_id} added to memory bank.")
         self.current_task_id += 1
 
-    def _snapshot_state(self, task: TaskTraining) -> TaskState:
+    def _snapshot(self, task: TaskTraining) -> tuple[torch.Tensor, torch.Tensor]:
         self.backbone.eval()
         knowledge_features = self._extract_all_features(task.extraction_loader, use_prompt=True)
 
@@ -197,13 +199,13 @@ class UCADModel(VisionModel):
             device=self.device,
             mode=self.config.coreset_mode,
         )
-        return TaskState(prompt_state=self.backbone.get_prompt_state(), knowledge=knowledge)
+        return self.backbone.get_prompt_state(), knowledge
 
     def predict(self, data) -> VisionPredictionResults:
-        scores, maps = self._score_dataset(data, [task.state for task in self.memory.tasks])
+        scores, maps = self._score_dataset(data, [(task.prompt, task.knowledge) for task in self.memory.tasks])
         return VisionPredictionResults(y_pred=np.zeros_like(scores, dtype=int), anomaly_scores=scores, score_maps=maps)
 
-    def _score_dataset(self, data, states: Sequence[TaskState]) -> tuple[np.ndarray, np.ndarray]:
+    def _score_dataset(self, data, states: Sequence[PromptedBank]) -> tuple[np.ndarray, np.ndarray]:
         self.backbone.eval()
         test_loader = self._as_loader(data, shuffle=False)
         scores: list[np.ndarray] = []
@@ -221,20 +223,20 @@ class UCADModel(VisionModel):
         return np.concatenate(scores), np.concatenate(maps)
 
     def _score_batch(
-        self, images: torch.Tensor, task_ids: torch.Tensor, states: Sequence[TaskState]
+        self, images: torch.Tensor, task_ids: torch.Tensor, states: Sequence[PromptedBank]
     ) -> tuple[np.ndarray, np.ndarray]:
         batch_scores = np.empty(len(images))
         batch_maps = np.empty((len(images), *self.config.input_size))
 
         for task_idx in task_ids.unique().tolist():
             selected = task_ids == task_idx
-            state = states[task_idx]
-            self.backbone.set_prompt_state(state.prompt_state)
+            prompt, knowledge = states[task_idx]
+            self.backbone.set_prompt_state(prompt)
 
             prompted_features = self._aggregate(self.backbone.extract_features_with_prompt(images[selected]))
             img_scores, task_maps = self.scorer.predict(
                 test_features=prompted_features,
-                knowledge_bank=state.knowledge.to(self.device),
+                knowledge_bank=knowledge.to(self.device),
                 input_size=self.config.input_size,
             )
 

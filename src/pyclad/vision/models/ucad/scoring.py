@@ -35,6 +35,7 @@ class NearestNeighborScorer:
         else:
             knn_distances, _ = torch.topk(distances, k=self.num_nn, dim=2, largest=False)
             patch_scores = knn_distances.mean(dim=2)
+            # Reproduces the reference, which reads faiss.IndexFlatL2 without a square root.
             if self.squared_distances:
                 patch_scores = patch_scores.square()
             image_scores = patch_scores.max(dim=1).values
