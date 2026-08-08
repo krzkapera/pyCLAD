@@ -10,12 +10,10 @@ class NearestNeighborScorer:
         num_nn: int = 1,
         reweighting_num_nn: int = 0,
         blur_sigma: float = 3.0,
-        squared_distances: bool = False,
     ):
         self.num_nn = num_nn
         self.reweighting_num_nn = reweighting_num_nn
         self.blur_sigma = blur_sigma
-        self.squared_distances = squared_distances
 
     def predict(
         self,
@@ -35,9 +33,6 @@ class NearestNeighborScorer:
         else:
             knn_distances, _ = torch.topk(distances, k=self.num_nn, dim=2, largest=False)
             patch_scores = knn_distances.mean(dim=2)
-            # Reproduces the reference, which reads faiss.IndexFlatL2 without a square root.
-            if self.squared_distances:
-                patch_scores = patch_scores.square()
             image_scores = patch_scores.max(dim=1).values
 
         anomaly_maps = self._build_anomaly_maps(patch_scores.reshape(B, 1, grid_size, grid_size), input_size)

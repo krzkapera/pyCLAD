@@ -112,19 +112,16 @@ def main():
                 f"{truths['ours'].shape} ours"
             )
 
-        scores = {}
-        for map_convention in ("ours", "reference"):
-            model.scorer.squared_distances = map_convention == "reference"
-            maps = model.predict(test_concept.data).score_maps
-            for truth_convention, truth in truths.items():
-                scores[f"map_{map_convention}_truth_{truth_convention}"] = average_precision_score(
-                    truth.reshape(-1), maps.reshape(-1)
-                )
+        maps = model.predict(test_concept.data).score_maps
+        scores = {
+            name: average_precision_score(truth.reshape(-1), maps.reshape(-1))
+            for name, truth in truths.items()
+        }
 
         logger.info(
             "CONVENTION %s %s positive_pixels_ours=%d positive_pixels_reference=%d",
             test_concept.name,
-            " ".join(f"{name}={value:.4f}" for name, value in scores.items()),
+            " ".join(f"truth_{name}={value:.4f}" for name, value in scores.items()),
             int(truths["ours"].sum()),
             int(truths["reference"].sum()),
         )
