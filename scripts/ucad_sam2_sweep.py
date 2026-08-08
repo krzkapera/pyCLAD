@@ -60,7 +60,8 @@ def train_task_with_tracking(model: UCADModel, category: str) -> dict:
     def on_epoch_end(epoch: int):
         features = model._extract_all_features(train_loader, use_prompt=True)
         knowledge = greedy_coreset_sampling(
-            features.reshape(-1, features.shape[-1]), model.config.knowledge_size, device=model.device
+            features.reshape(-1, features.shape[-1]), model.config.knowledge_size,
+            model._coreset_generator, device=model.device
         ).cpu()
         scores, maps = predict_direct(model, test_loader, knowledge)
         img_auroc, pixel_aupr = metrics(test_samples, scores, maps)

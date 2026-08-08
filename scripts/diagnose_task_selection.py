@@ -62,7 +62,8 @@ def main():
         feats = model._extract_all_features(loader, use_prompt=False)
         keys.append(
             greedy_coreset_sampling(
-                feats.reshape(-1, feats.shape[-1]), model.config.key_size, device=model.device
+                feats.reshape(-1, feats.shape[-1]), model.config.key_size,
+                model._coreset_generator, device=model.device
             ).to(model.device)
         )
         logger.info(f"klucz gotowy: {c}")

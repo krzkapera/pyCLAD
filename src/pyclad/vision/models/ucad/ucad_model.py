@@ -60,6 +60,7 @@ class UCADModel(VisionModel):
             self.config, device=self.device
         )
         self.current_task_id = 0
+        self._coreset_generator = torch.Generator().manual_seed(self.config.seed)
 
     def name(self) -> str:
         return "UCAD"
@@ -136,8 +137,8 @@ class UCADModel(VisionModel):
 
         logger.info(f"Computing coreset for Task Key (target: {self.config.key_size})")
         key = greedy_coreset_sampling(
-            key_features.reshape(-1, dimension), self.config.key_size, device=self.device,
-            mode=self.config.coreset_mode,
+            key_features.reshape(-1, dimension), self.config.key_size, self._coreset_generator,
+            device=self.device, mode=self.config.coreset_mode,
         )
 
         if self.config.reset_prompt_per_task:
@@ -192,6 +193,7 @@ class UCADModel(VisionModel):
         knowledge = greedy_coreset_sampling(
             knowledge_features.reshape(-1, task.dimension),
             self.config.knowledge_size,
+            self._coreset_generator,
             device=self.device,
             mode=self.config.coreset_mode,
         )

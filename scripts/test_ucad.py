@@ -50,6 +50,10 @@ def _tiny_config(**overrides) -> UCADConfig:
     return UCADConfig(**defaults)
 
 
+def _generator(seed: int = 0) -> torch.Generator:
+    return torch.Generator().manual_seed(seed)
+
+
 def _images(rng, n: int, brightness: int = 128) -> np.ndarray:
     noise = rng.random((n, 32, 32, 3)) * 40.0
     return (noise + brightness).clip(0, 255).astype(np.uint8)
@@ -142,21 +146,21 @@ class TestCoreset:
     def test_exact_mode_is_deterministic(self):
         features = torch.randn(40, 8)
 
-        first = greedy_coreset_sampling(features, 5, mode="exact")
-        second = greedy_coreset_sampling(features, 5, mode="exact")
+        first = greedy_coreset_sampling(features, 5, _generator(), mode="exact")
+        second = greedy_coreset_sampling(features, 5, _generator(), mode="exact")
 
         torch.testing.assert_close(first, second)
 
     def test_both_modes_return_the_requested_size(self):
         features = torch.randn(40, 8)
 
-        assert greedy_coreset_sampling(features, 5, mode="exact").shape == (5, 8)
-        assert greedy_coreset_sampling(features, 5, mode="approximate").shape == (5, 8)
+        assert greedy_coreset_sampling(features, 5, _generator(), mode="exact").shape == (5, 8)
+        assert greedy_coreset_sampling(features, 5, _generator(), mode="approximate").shape == (5, 8)
 
     def test_returns_input_when_smaller_than_target(self):
         features = torch.randn(3, 8)
 
-        torch.testing.assert_close(greedy_coreset_sampling(features, 5, mode="exact"), features)
+        torch.testing.assert_close(greedy_coreset_sampling(features, 5, _generator(), mode="exact"), features)
 
 
 class TestModelIntegration:
