@@ -17,7 +17,7 @@ class TaskState:
 class TaskMemory:
     task_id: int
     key: torch.Tensor
-    states: List[TaskState]
+    states: List[TaskState]  # reference-protocol: the method stores exactly one
 
 
 class TaskMemoryBank:

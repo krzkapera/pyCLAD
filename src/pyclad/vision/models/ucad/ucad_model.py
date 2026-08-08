@@ -17,7 +17,8 @@ from .features import patchcore_aggregate
 from .inputs import build_dataset
 from .memory import TaskMemoryBank, TaskState
 from .sam import MaskProvider, create_mask_provider
-from .scoring import NearestNeighborScorer, combine_members
+from .reference_ensemble import combine_members, snapshot_epochs  # reference-protocol
+from .scoring import NearestNeighborScorer
 from .vit_prompted import PromptedViT
 
 logger = logging.getLogger(__name__)
@@ -131,7 +132,8 @@ class UCADModel(VisionModel):
         optimizer = optim.Adam(self.backbone.prompt_module.parameters(), lr=self.config.learning_rate)
 
         self.backbone.train()
-        snapshot_epochs = self._snapshot_epochs()
+        # reference-protocol: one state is the method; more than one reproduces the authors' ensemble
+        wanted_epochs = snapshot_epochs(self.config.training_epochs, self.config.score_ensemble_epochs)
         states: list[TaskState] = []
 
         for epoch in range(self.config.training_epochs):
@@ -157,7 +159,7 @@ class UCADModel(VisionModel):
 
             logger.info(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}")
 
-            if epoch + 1 in snapshot_epochs:
+            if epoch + 1 in wanted_epochs:
                 states.append(self._snapshot_state(extraction_loader, C))
                 self.backbone.train()
 
@@ -168,12 +170,6 @@ class UCADModel(VisionModel):
 
         logger.info(f"Task {self.current_task_id} added to memory bank.")
         self.current_task_id += 1
-
-    def _snapshot_epochs(self) -> set[int]:
-        epochs, members = self.config.training_epochs, self.config.score_ensemble_epochs
-        if members >= epochs:
-            return set(range(1, epochs + 1))
-        return {round(epochs / members * (index + 1)) for index in range(members)}
 
     def _snapshot_state(self, extraction_loader: DataLoader, dimension: int) -> TaskState:
         self.backbone.eval()
@@ -192,6 +188,7 @@ class UCADModel(VisionModel):
         self.backbone.eval()
         test_loader = self._as_loader(data, shuffle=False)
 
+        # reference-protocol: members > 1 only when the authors' epoch ensemble is requested
         members = max(len(task.states) for task in self.memory.tasks)
         member_scores: list[list[np.ndarray]] = [[] for _ in range(members)]
         member_maps: list[list[np.ndarray]] = [[] for _ in range(members)]

@@ -68,6 +68,7 @@ class UCADConfig(BaseModel):
         default=1024, description="Aggregated feature dimension (used when patchsize > 1)"
     )
 
+    # reference-protocol: temporary, see reference_ensemble.py
     score_ensemble_epochs: int = Field(
         default=1,
         description="How many training epochs contribute a prompt/knowledge pair to the concept's score, spread "
