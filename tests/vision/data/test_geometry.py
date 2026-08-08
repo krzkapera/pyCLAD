@@ -11,7 +11,6 @@ def _gradient(width: int, height: int) -> Image.Image:
 
 
 def test_modes_agree_on_square_images():
-    """MVTec ships square images, so reading it either way must give the identical tensor."""
     square = _gradient(64, 64)
 
     stretched = np.asarray(resize_image(square, (16, 16), "stretch"))
@@ -28,7 +27,6 @@ def test_short_side_crop_keeps_the_centre_of_a_wide_image():
 
     assert stretched.shape == cropped.shape == (16, 16, 3)
     assert not np.array_equal(stretched, cropped)
-    # Stretching keeps the full horizontal gradient; cropping keeps a slice around its middle.
     assert stretched[0, 0, 0] < cropped[0, 0, 0] and cropped[0, -1, 0] < stretched[0, -1, 0]
 
 
