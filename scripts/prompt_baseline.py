@@ -69,6 +69,22 @@ def build_model(config: UCADConfig) -> UCADModel:
     return model
 
 
+def concept_config(**overrides) -> UCADConfig:
+    return UCADConfig(
+        max_tasks=1,
+        input_size=INPUT_SIZE,
+        resize_mode=RESIZE_MODE,
+        training_epochs=0,
+        blur_sigma=BLUR_SIGMA,
+        seed=SEED,
+        sam_masks_dir=MASKS_DIR,
+        sam_images_root=ROOT,
+        # _begin_task re-randomises the prefix when this is left on, which would undo a "zeros" run.
+        reset_prompt_per_task=PROMPT_INIT != "zeros",
+        **overrides,
+    )
+
+
 def main():
     logger.info(
         "BASELINE dataset=%s prompt_init=%s resize=%s blur=%.1f seed=%d categories=%s",
@@ -86,17 +102,7 @@ def main():
 
     images, pixels = [], []
     for train_concept, test_concept in zip(dataset.train_concepts(), dataset.test_concepts()):
-        config = UCADConfig(
-            max_tasks=1,
-            input_size=INPUT_SIZE,
-            resize_mode=RESIZE_MODE,
-            training_epochs=0,
-            blur_sigma=BLUR_SIGMA,
-            seed=SEED,
-            sam_masks_dir=MASKS_DIR,
-            sam_images_root=ROOT,
-        )
-        model = build_model(config)
+        model = build_model(concept_config())
         model.fit(train_concept.data)
 
         results = model.predict(test_concept.data)
