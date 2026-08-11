@@ -220,7 +220,8 @@ class TestModelIntegration:
         keys = []
         for seed in (0, 12345):
             torch.manual_seed(1)
-            model = UCADModel(_tiny_config(training_epochs=0, seed=seed), mask_provider=ConstantMaskProvider())
+            config = _tiny_config(training_epochs=0, seed=seed, coreset_mode="exact")
+            model = UCADModel(config, mask_provider=ConstantMaskProvider())
             model.fit(images)
             keys.append(model.memory.tasks[0].key)
 

@@ -24,7 +24,7 @@ class UCADConfig(BaseModel):
     knowledge_size: int = Field(default=196, description="Size of the coreset target for knowledge bank")
     key_size: int = Field(default=196, description="Size of the coreset target for task key")
     coreset_mode: Literal["exact", "approximate"] = Field(
-        default="exact",
+        default="approximate",
         description="'exact' selects deterministically in the full feature space; 'approximate' seeds from "
         "random starting points and selects in a randomly projected space, as the reference UCAD implementation does",
     )
@@ -42,7 +42,7 @@ class UCADConfig(BaseModel):
         description="Image-score reweighting by the local density of the knowledge bank: size of the neighborhood "
         "of the nearest match used in the softmax weight (>= 2); 0 disables it (image score = max patch score)",
     )
-    blur_sigma: float = Field(default=3.0, description="Gaussian smoothing applied to the upsampled anomaly map")
+    blur_sigma: float = Field(default=4.0, description="Gaussian smoothing applied to the upsampled anomaly map")
     reset_prompt_per_task: bool = Field(
         default=True,
         description="Re-initialize the prompt before each concept instead of continuing from the previous one",
