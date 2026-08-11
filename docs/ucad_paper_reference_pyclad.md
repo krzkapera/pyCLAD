@@ -132,6 +132,10 @@ favour; equalise them and the two implementations agree to 0.006 and 0.003 respe
 
 ## Things worth knowing before you tune it
 
+The paper credits SCL with +0.088 image AUROC and +0.049 pixel AUPR (Table 5, CPM-only 0.786/0.251
+against CPM+SCL 0.874/0.300). A no-SCL configuration lands on 0.7833/0.2718, matching their CPM-only
+row, and the pixel half of their gain is reproduced by epoch ensembling alone.
+
 **The contrastive loss does not help on these benchmarks.** After one epoch the prompted features are
 99.9% cosine-identical to the frozen ones, so the model is PatchCore on a frozen ViT. After 25 epochs
 they have moved a long way in the wrong direction - mean pairwise cosine falls from 0.42 to 0.18 and
@@ -155,9 +159,43 @@ paper states.
 (15, 7, 768); the code builds prefix tuning with `prompt_length=1` on twelve layers. We could not
 determine which the published numbers correspond to.
 
+## How these differences were established
+
+Nothing here rests on a single run. The 12-category VisA average moves by up to +-0.03 between seeds
+and candle alone by +-0.07, so every difference quoted above is three seeds per side, and four
+earlier claims made from single runs were withdrawn when they did not survive replication:
+
+| withdrawn claim | what retracted it |
+|---|---|
+| the mask-resampling path is worth +0.042 image | 25 epochs, 3 seeds: candle 0.6172 +- 0.0665 with the reference's maps against 0.6293 +- 0.0106 |
+| the exact coreset is worth +0.043 image | 25 epochs, 3 seeds each: +0.007 +- 0.009 |
+| the two pipelines are numerically equivalent | rested on one coincidental match; the line-by-line trace above replaced it |
+| pyCLAD leads the reference by 0.024 image AUROC | that compared batch 24 against batch 8; at equal batch size it is +0.005 +- 0.006 |
+
+The last one was the hard one to find, and it is worth recording how. At batch 24 pyCLAD scored 0.21
+higher than the reference on candle and matched it on ten of twelve categories. Logging the
+cumulative ensemble after every epoch localised it: epoch 1 agreed (0.6935 +- 0.0833 against 0.6528
++- 0.0470), which cleared feature extraction and scoring, and from there the reference decayed
+monotonically in every seed while pyCLAD stayed flat. That pattern points at the training step, and
+the training step differed only in how many optimizer steps an epoch took - 123 against 41.
+
+Two candidate differences were tested and cleared before the batch size was found: giving pyCLAD the
+reference's own 14x14 label maps left candle at 0.6172 +- 0.0665 against 0.6293 +- 0.0106, and its
+mask source at 0.6298 +- 0.0471. SAM2 at full resolution, SAM2 at 224 and SAM ViT-B by the authors'
+recipe all carry the same supervision after the 14x14 downsample - candle 7.33 against 7.25 regions,
+positive-pair fraction 0.392 against 0.396.
+
+Two further hypotheses about the method were rejected: the image-score reweighting of Eq. 5-6 sits
+inside seed noise at `reweighting_num_nn=9` and costs 0.08 at 3, and a prompt length of 5 helps only
+where the prompt barely trains, costing 0.05 at 25 epochs.
+
+One defect on pyCLAD's side made the early numbers noisier than they should have been: `seed` reached
+the prompt but not the coreset's random projection, so two processes with one seed picked different
+memory vectors. Fixed; a configuration now reproduces exactly.
+
 ## Reproducing the tables
 
-`docs/ucad_visa_reproduction.md` has the per-category results for both implementations under both
-protocols on VisA and MVTec. The scripts that produce them are in `scripts/`:
+`docs/ucad.md` has the per-category results for both implementations under both protocols on VisA
+and MVTec, and everything a user of the model needs. The scripts that produce them are in `scripts/`:
 `protocol_compare.py` reports both protocols from one training run, `reference_ensemble.py` holds
 the ensemble, and `pixel_convention_effect.py` scores one run against both ground-truth conventions.
