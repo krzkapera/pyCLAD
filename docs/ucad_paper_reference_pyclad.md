@@ -86,6 +86,15 @@ after one or two, tile after one to three, hazelnut after three to eight. For th
 reference has no leak-free reading at all, and its "before selection" and "after selection" numbers
 are the same by construction. No VisA category reaches 1.0, so VisA comparisons are unaffected.
 
+### It is not evaluated on the official split
+
+The authors' loader walks directories and cannot read VisA's `split_csv/1cls.csv`, so a run of the
+released code is not evaluated on the benchmark's official train/test division. Our comparisons use
+the same per-category folder copy the reference requires, which holds every normal image with the
+first 20 per class held out for test, where the official split divides the normals roughly 90/10.
+That does not affect the comparison between the two implementations - both see the same data - but it
+does mean neither is directly comparable to a published number obtained on the official split.
+
 ### What the three protocols give
 
 VisA, twelve categories, image AUROC, three seeds:

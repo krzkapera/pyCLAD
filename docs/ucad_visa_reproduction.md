@@ -21,7 +21,9 @@ if (auroc > pr_auroc):                                     # run_ucad.py
 
 The cumulative ensemble after the last epoch uses no test labels; its maximum over epochs uses them
 to pick one of 25 states per category, with no validation split, and the selected state is what
-enters the concept memory. Both are reported below as the **honest** and the **reference** protocol.
+enters the concept memory. Both are reported below: **without epoch selection** and **the reference protocol**. Neither is
+neutral ground - both use the authors' epoch ensemble; they differ only in whether the epoch is
+chosen with test labels. The method as the paper describes it is a single model, lower than both.
 The ensembling itself is not leakage and pyCLAD implements it as `score_ensemble_epochs`.
 
 ## VisA, twelve categories, three seeds on each side
@@ -29,7 +31,7 @@ The ensembling itself is not leakage and pyCLAD implements it as `score_ensemble
 Both implementations at the reference's configuration, on our VisA copy with the reference's own SAM
 ViT-B supervision. Image AUROC:
 
-| category | pyCLAD honest | pyCLAD reference-protocol | reference honest | reference protocol | paper |
+| category | pyCLAD without selection | pyCLAD reference-protocol | reference without selection | reference protocol | paper |
 |---|---|---|---|---|---|
 | candle | 0.5013 +- 0.0229 | 0.7278 +- 0.0891 | 0.4352 +- 0.0721 | 0.7325 +- 0.0478 | 0.778 |
 | capsules | 0.8668 +- 0.0228 | 0.8748 +- 0.0145 | 0.8623 +- 0.0210 | 0.8682 +- 0.0255 | 0.877 |
@@ -47,7 +49,7 @@ ViT-B supervision. Image AUROC:
 
 Pixel AUPR:
 
-| category | pyCLAD honest | pyCLAD reference-protocol | reference honest | reference protocol | paper |
+| category | pyCLAD without selection | pyCLAD reference-protocol | reference without selection | reference protocol | paper |
 |---|---|---|---|---|---|
 | candle | 0.1229 +- 0.0107 | 0.1189 +- 0.0313 | 0.0867 +- 0.0047 | 0.0834 +- 0.0163 | 0.067 |
 | capsules | 0.6152 +- 0.0127 | 0.6125 +- 0.0055 | 0.5688 +- 0.0053 | 0.5602 +- 0.0179 | 0.437 |
@@ -65,9 +67,9 @@ Pixel AUPR:
 
 | | pyCLAD - reference |
 |---|---|
-| image, honest protocol | +0.0048 +- 0.0056 (0.9 sd) |
+| image, reading without epoch selection | +0.0048 +- 0.0056 (0.9 sd) |
 | image, reference protocol | +0.0002 +- 0.0030 (0.1 sd) |
-| pixel, honest protocol | +0.0476 +- 0.0020 |
+| pixel, reading without epoch selection | +0.0476 +- 0.0020 |
 | pixel, reference protocol | +0.0441 +- 0.0056 |
 
 **Image AUROC is reproduced**: under the reference's own protocol the two implementations agree to
@@ -110,7 +112,7 @@ VisA figure rests substantially on the selection mechanism**: without it the ref
 
 Same configuration, the reference's own `mvtec2d-sam-b` supervision. Image AUROC:
 
-| category | pyCLAD honest | pyCLAD reference-protocol | reference honest | reference protocol | paper |
+| category | pyCLAD without selection | pyCLAD reference-protocol | reference without selection | reference protocol | paper |
 |---|---|---|---|---|---|
 | bottle* | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.0000 +- 0.0000 | 1.000 |
 | cable | 0.7207 +- 0.0058 | 0.7224 +- 0.0048 | 0.7216 +- 0.0055 | 0.7280 +- 0.0058 | 0.751 |
@@ -131,7 +133,7 @@ Same configuration, the reference's own `mvtec2d-sam-b` supervision. Image AUROC
 
 Pixel AUPR:
 
-| category | pyCLAD honest | pyCLAD reference-protocol | reference honest | reference protocol | paper |
+| category | pyCLAD without selection | pyCLAD reference-protocol | reference without selection | reference protocol | paper |
 |---|---|---|---|---|---|
 | bottle* | 0.8313 +- 0.0048 | 0.8337 +- 0.0053 | 0.7822 +- 0.0055 | 0.7822 +- 0.0055 | 0.752 |
 | cable | 0.2344 +- 0.0153 | 0.2222 +- 0.0135 | 0.1920 +- 0.0099 | 0.1801 +- 0.0241 | 0.290 |
@@ -152,12 +154,12 @@ Pixel AUPR:
 
 | | pyCLAD - reference |
 |---|---|
-| image, honest protocol | -0.0048 +- 0.0021 (2.3 sd) |
+| image, reading without epoch selection | -0.0048 +- 0.0021 (2.3 sd) |
 | image, reference protocol | -0.0064 +- 0.0018 (3.5 sd) |
-| pixel, honest protocol | +0.0710 +- 0.0022 |
+| pixel, reading without epoch selection | +0.0710 +- 0.0022 |
 | pixel, reference protocol | +0.0602 +- 0.0022 |
 
-pyCLAD is 0.005 **behind** on image here, and screw is 84% of it - see below. pyCLAD's honest 0.9291
+pyCLAD is 0.005 **behind** on image here, and screw is 84% of it - see below. pyCLAD's 0.9291 without selection
 matches the paper's 0.930.
 
 The pixel column carries the same two conventions, and equalising them closes it as it does on VisA:
@@ -198,8 +200,7 @@ if (auroc == 1):     # run_ucad.py, inside the branch that also commits the stat
 
 That fires on five MVTec categories - bottle and leather after one epoch, toothbrush after one or
 two, tile after one to three, hazelnut after three to eight - so for those the reference has no
-leak-free reading at all: the stopping point itself was chosen with test labels, and its honest and
-selected columns are the same number by construction. No VisA category reaches 1.0, so the VisA
+leak-free reading at all: the stopping point itself was chosen with test labels, and its two columns are the same number by construction. No VisA category reaches 1.0, so the VisA
 comparison is unaffected.
 
 ## The configuration these numbers hold at
