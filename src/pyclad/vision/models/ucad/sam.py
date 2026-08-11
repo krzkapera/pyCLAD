@@ -53,6 +53,13 @@ def _generate_label_map(mask_generator, image_bgr: np.ndarray) -> np.ndarray:
     return label_map
 
 
+def _unreadable_image_message(path: str) -> str:
+    return (
+        f"Cannot read the image {path}. UCAD resolves SAM masks by image path, so the dataset has to be "
+        f"read with data_mode='paths'."
+    )
+
+
 class SAM2OnlineMaskProvider:
     def __init__(
         self,
@@ -83,8 +90,7 @@ class SAM2OnlineMaskProvider:
 
             image = cv2.imread(path)
             if image is None:
-                logger.warning(f"Failed to read image {path}, using zero mask")
-                continue
+                raise FileNotFoundError(_unreadable_image_message(path))
 
             label_map = _generate_label_map(self.mask_generator, image)
             label_map_resized = cv2.resize(label_map.astype(np.float32), target_size, interpolation=cv2.INTER_NEAREST)
@@ -135,12 +141,16 @@ class SAM2OfflineMaskProvider:
         labels = torch.zeros((batch_size, H * W), dtype=torch.float32)
 
         for i, path in enumerate(image_paths):
-            mask_path = self._mask_path(Path(path))
+            if not Path(path).is_file():
+                raise FileNotFoundError(_unreadable_image_message(path))
 
+            mask_path = self._mask_path(Path(path))
             mask = cv2.imread(str(mask_path), cv2.IMREAD_UNCHANGED) if mask_path.exists() else None
             if mask is None:
-                logger.warning(f"Could not read precomputed mask for {path}, using zeros")
-                continue
+                raise FileNotFoundError(
+                    f"No SAM mask for {path} at {mask_path}. Precompute the masks with save_masks, or point "
+                    f"sam_masks_dir and sam_images_root at a mask directory mirroring the dataset root."
+                )
 
             mask_resized = cv2.resize(mask, target_size, interpolation=cv2.INTER_NEAREST)
             labels[i] = torch.from_numpy(mask_resized.astype(np.float32).flatten())
@@ -157,8 +167,7 @@ class SAM2OfflineMaskProvider:
 
             image = cv2.imread(path)
             if image is None:
-                logger.warning(f"Failed to read image {path}, skipping")
-                continue
+                raise FileNotFoundError(_unreadable_image_message(path))
 
             mask_generator = mask_generator or self._mask_generator_instance()
             label_map = _generate_label_map(mask_generator, image)

@@ -21,7 +21,7 @@ from pyclad.vision.models.ucad.inputs import (
 )
 from pyclad.vision.models.ucad.memory import TaskMemoryBank
 from pyclad.vision.models.ucad.prompt import PrefixTuningPrompt
-from pyclad.vision.models.ucad.sam import MaskProvider
+from pyclad.vision.models.ucad.sam import MaskProvider, SAM2OfflineMaskProvider
 
 INPUT_SIZE = (224, 224)
 
@@ -110,6 +110,21 @@ class TestInputAdapters:
 
         expected = (1.0 - IMAGENET_MEAN) / IMAGENET_STD
         torch.testing.assert_close(image, expected.expand(3, *INPUT_SIZE).contiguous())
+
+
+class TestOfflineMaskProvider:
+    def test_missing_mask_is_an_error(self, tmp_path):
+        paths = _write_images(tmp_path, np.random.default_rng(0), 1)
+        provider = SAM2OfflineMaskProvider(masks_dir=tmp_path / "masks", images_root=tmp_path)
+
+        with pytest.raises(FileNotFoundError, match="No SAM mask"):
+            provider.get_masks(list(paths))
+
+    def test_synthetic_paths_are_an_error(self, tmp_path):
+        provider = SAM2OfflineMaskProvider(masks_dir=tmp_path / "masks", images_root=tmp_path)
+
+        with pytest.raises(FileNotFoundError, match="data_mode='paths'"):
+            provider.get_masks(["concept_0_0.png"])
 
 
 class TestMemoryBank:
