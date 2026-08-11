@@ -143,24 +143,25 @@ class TestMemoryBank:
 
 
 class TestCoreset:
-    def test_exact_mode_is_deterministic(self):
+    def test_both_modes_are_reproducible_from_the_generator(self):
         features = torch.randn(40, 8)
 
-        first = greedy_coreset_sampling(features, 5, _generator(), mode="exact")
-        second = greedy_coreset_sampling(features, 5, _generator(), mode="exact")
+        for mode in ("greedy", "approximate"):
+            first = greedy_coreset_sampling(features, 5, _generator(), mode=mode)
+            second = greedy_coreset_sampling(features, 5, _generator(), mode=mode)
 
-        torch.testing.assert_close(first, second)
+            torch.testing.assert_close(first, second)
 
     def test_both_modes_return_the_requested_size(self):
         features = torch.randn(40, 8)
 
-        assert greedy_coreset_sampling(features, 5, _generator(), mode="exact").shape == (5, 8)
+        assert greedy_coreset_sampling(features, 5, _generator(), mode="greedy").shape == (5, 8)
         assert greedy_coreset_sampling(features, 5, _generator(), mode="approximate").shape == (5, 8)
 
     def test_returns_input_when_smaller_than_target(self):
         features = torch.randn(3, 8)
 
-        torch.testing.assert_close(greedy_coreset_sampling(features, 5, _generator(), mode="exact"), features)
+        torch.testing.assert_close(greedy_coreset_sampling(features, 5, _generator(), mode="greedy"), features)
 
 
 class TestModelIntegration:
@@ -214,18 +215,17 @@ class TestModelIntegration:
         assert model.memory.num_tasks == 2
         assert set(callback.info()["concept_metric_callback_ROC-AUC"]["metric_matrix"]) == {"t0", "t1"}
 
-    def test_task_key_does_not_depend_on_batch_order(self):
-        """The greedy coreset seeds from the first feature, so extraction must not see the shuffled order."""
+    def test_feature_extraction_does_not_see_the_shuffled_order(self):
+        """Coreset selection is order-dependent, so extraction must read the dataset order whatever the shuffle."""
         images = _images(np.random.default_rng(0), 6)
-        keys = []
+        extracted = []
         for seed in (0, 12345):
             torch.manual_seed(1)
-            config = _tiny_config(training_epochs=0, seed=seed, coreset_mode="exact")
-            model = UCADModel(config, mask_provider=ConstantMaskProvider())
-            model.fit(images)
-            keys.append(model.memory.tasks[0].key)
+            model = UCADModel(_tiny_config(seed=seed), mask_provider=ConstantMaskProvider())
+            shuffled = model._as_loader(images, shuffle=True)
+            extracted.append(model._extract_all_features(model._sequential_view(shuffled), use_prompt=False))
 
-        torch.testing.assert_close(keys[0], keys[1])
+        torch.testing.assert_close(extracted[0], extracted[1])
 
     def test_info_carries_the_configuration(self):
         model = UCADModel(_tiny_config(patchsize=1), mask_provider=ConstantMaskProvider())

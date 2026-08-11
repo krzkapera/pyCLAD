@@ -5,7 +5,7 @@ from typing import Literal, Optional
 
 import torch
 
-CoresetMode = Literal["exact", "approximate"]
+CoresetMode = Literal["greedy", "approximate"]
 
 
 def _project(features: torch.Tensor, target_dim: int, generator: torch.Generator) -> torch.Tensor:
@@ -17,10 +17,21 @@ def _project(features: torch.Tensor, target_dim: int, generator: torch.Generator
     return features @ projection.to(features.device)
 
 
-def _greedy_select(
-    selection_space: torch.Tensor, anchor_distances: torch.Tensor, target_size: int, seed_indices: list[int]
+def _select_from_matrix(distances: torch.Tensor, anchor_distances: torch.Tensor, target_size: int) -> list[int]:
+    selected: list[int] = []
+
+    while len(selected) < target_size:
+        current_idx = int(torch.argmax(anchor_distances))
+        selected.append(current_idx)
+        anchor_distances = torch.minimum(anchor_distances, distances[:, current_idx])
+
+    return selected
+
+
+def _select_iteratively(
+    selection_space: torch.Tensor, anchor_distances: torch.Tensor, target_size: int
 ) -> list[int]:
-    selected = list(seed_indices)
+    selected: list[int] = []
 
     while len(selected) < target_size:
         current_idx = int(torch.argmax(anchor_distances))
@@ -36,7 +47,7 @@ def greedy_coreset_sampling(
     target_size: int,
     generator: torch.Generator,
     device: Optional[torch.device] = None,
-    mode: CoresetMode = "exact",
+    mode: CoresetMode = "approximate",
     num_starting_points: int = 10,
     projection_dim: int = 128,
 ) -> torch.Tensor:
@@ -46,16 +57,16 @@ def greedy_coreset_sampling(
     if device is None:
         device = features.device
     features = features.to(device)
+    selection_space = _project(features, projection_dim, generator)
 
-    if mode == "exact":
-        anchor_distances = torch.norm(features - features[0], dim=1)
-        indices = _greedy_select(features, anchor_distances, target_size, seed_indices=[0])
+    if mode == "greedy":
+        distances = torch.cdist(selection_space, selection_space)
+        indices = _select_from_matrix(distances, torch.norm(distances, dim=1), target_size)
     else:
-        selection_space = _project(features, projection_dim, generator)
         starting_points = torch.randperm(len(selection_space), generator=generator)[
             : min(num_starting_points, len(selection_space))
         ].to(device)
         anchor_distances = torch.cdist(selection_space, selection_space[starting_points]).mean(dim=1)
-        indices = _greedy_select(selection_space, anchor_distances, target_size, seed_indices=[])
+        indices = _select_iteratively(selection_space, anchor_distances, target_size)
 
     return features[indices]

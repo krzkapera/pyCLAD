@@ -23,10 +23,11 @@ class UCADConfig(BaseModel):
     max_tasks: int = Field(default=15, description="Maximum number of concepts/tasks to store")
     knowledge_size: int = Field(default=196, description="Size of the coreset target for knowledge bank")
     key_size: int = Field(default=196, description="Size of the coreset target for task key")
-    coreset_mode: Literal["exact", "approximate"] = Field(
+    coreset_mode: Literal["greedy", "approximate"] = Field(
         default="approximate",
-        description="'exact' selects deterministically in the full feature space; 'approximate' seeds from "
-        "random starting points and selects in a randomly projected space, as the reference UCAD implementation does",
+        description="Both project features before selecting. 'greedy' materialises the full pairwise "
+        "distance matrix and starts from the most distant vector, which costs O(N^2) memory; 'approximate' "
+        "starts from random points and recomputes distances per step, as the reference UCAD implementation does",
     )
 
     # Contrastive learning settings
