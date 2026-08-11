@@ -41,8 +41,10 @@ if [ "$REF_DATASET" = "visa" ]; then
     DATA_ROOT=$BASE/data/visa
     DEFAULT_CATEGORIES="candle capsules cashew chewinggum fryum macaroni1 macaroni2 pcb1 pcb2 pcb3 pcb4 pipe_fryum"
     # The reference reads its SCL masks from the image path with 'visa' replaced by 'visa-sam-b'.
-    $BASE/.venv-ml/bin/python $BASE/code/pyCLAD/scripts/visa_sam_b_masks.py \
-        "$BASE/data/visa-sam2" "$BASE/data/visa-sam-b" || exit 1
+    if [ ! -d "$BASE/data/visa-sam-b" ]; then
+        $BASE/.venv-ml/bin/python $BASE/code/pyCLAD/scripts/visa_sam_b_masks.py \
+            "$BASE/data/visa-sam2" "$BASE/data/visa-sam-b" || exit 1
+    fi
 else
     DATA_ROOT=$BASE/data/mvtec2d
     DEFAULT_CATEGORIES="bottle cable capsule carpet grid hazelnut leather metal_nut pill screw tile toothbrush transistor wood zipper"
