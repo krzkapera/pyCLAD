@@ -114,7 +114,7 @@ class TestInputAdapters:
 
 class TestMemoryBank:
     def test_stored_state_is_not_aliased_by_the_live_prompt(self):
-        prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, num_heads=2, embed_dim=4)
+        prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, generator=_generator(), num_heads=2, embed_dim=4)
         memory = TaskMemoryBank(max_tasks=1)
         memory.add_task(0, key=torch.zeros(2, 4), prompt=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))
         stored = memory.get_task(0).prompt.clone()
@@ -124,7 +124,7 @@ class TestMemoryBank:
         torch.testing.assert_close(memory.get_task(0).prompt, stored)
 
     def test_restoring_a_task_does_not_mutate_the_bank(self):
-        prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, num_heads=2, embed_dim=4)
+        prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, generator=_generator(), num_heads=2, embed_dim=4)
         memory = TaskMemoryBank(max_tasks=1)
         memory.add_task(0, key=torch.zeros(2, 4), prompt=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))
         stored = memory.get_task(0).prompt.clone()

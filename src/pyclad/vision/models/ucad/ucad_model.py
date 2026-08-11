@@ -50,7 +50,7 @@ class UCADModel(VisionModel):
             feature_layer=self.config.feature_layer,
             prompt_length=self.config.prompt_length,
             num_prompt_layers=self.config.num_prompt_layers,
-            seed=self.config.seed,
+            prompt_generator=self._seeded_generator(),
         ).to(self.device)
 
         self.memory = TaskMemoryBank(max_tasks=self.config.max_tasks)
@@ -63,7 +63,10 @@ class UCADModel(VisionModel):
             self.config, device=self.device
         )
         self.current_task_id = 0
-        self._coreset_generator = torch.Generator().manual_seed(self.config.seed)
+        self._coreset_generator = self._seeded_generator()
+
+    def _seeded_generator(self) -> torch.Generator:
+        return torch.Generator().manual_seed(self.config.seed)
 
     def name(self) -> str:
         return "UCAD"
@@ -109,7 +112,7 @@ class UCADModel(VisionModel):
             dataset,
             batch_size=self.config.batch_size,
             shuffle=shuffle,
-            generator=torch.Generator().manual_seed(self.config.seed),
+            generator=self._seeded_generator(),
         )
 
     def _sequential_view(self, loader: DataLoader) -> DataLoader:
@@ -117,7 +120,7 @@ class UCADModel(VisionModel):
             loader.dataset,
             batch_size=self.config.batch_size,
             shuffle=False,
-            generator=torch.Generator().manual_seed(self.config.seed),
+            generator=self._seeded_generator(),
         )
 
     def fit(self, training_data):

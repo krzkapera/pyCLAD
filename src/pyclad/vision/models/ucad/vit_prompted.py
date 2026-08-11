@@ -50,12 +50,12 @@ def _block_forward_with_prompt(
 class PromptedViT(nn.Module):
     def __init__(
         self,
+        prompt_generator: torch.Generator,
         model_name: str = "vit_base_patch16_224",
         pretrained: bool = True,
         feature_layer: int = 5,
         prompt_length: int = 1,
         num_prompt_layers: int = 12,
-        seed: int = 0,
     ):
         super().__init__()
 
@@ -78,7 +78,7 @@ class PromptedViT(nn.Module):
             prompt_length=prompt_length,
             num_heads=self.num_heads,
             embed_dim=self.embed_dim,
-            seed=seed,
+            generator=prompt_generator,
         )
 
         for i, block in enumerate(self.vit.blocks):
