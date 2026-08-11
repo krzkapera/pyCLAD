@@ -98,7 +98,11 @@ def main():
             pixels.append(float(average_precision_score(truth, maps[:epochs].mean(axis=0).reshape(-1))))
 
         singles = [float(roc_auc_score(test_concept.labels, scores[epoch])) for epoch in range(EPOCHS)]
+        single_pixels = [
+            float(average_precision_score(truth, maps[epoch].reshape(-1))) for epoch in range(EPOCHS)
+        ]
         logger.info("TRAJECTORY %s single=%s", test_concept.name, np.round(singles, 4).tolist())
+        logger.info("TRAJECTORY %s single_pixel=%s", test_concept.name, np.round(single_pixels, 4).tolist())
         logger.info("TRAJECTORY %s cumulative=%s", test_concept.name, np.round(images, 4).tolist())
 
         best = int(np.argmax(images))
