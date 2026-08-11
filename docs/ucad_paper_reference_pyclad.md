@@ -44,9 +44,8 @@ you would deploy.
 
 This uses no labels, so it is legitimate as a scoring scheme; it is simply not the method the paper
 describes, and the paper's memory figure rules it out. It is worth **+0.129 image AUROC** on VisA
-(0.7045 +- 0.0353 for one model against 0.8335 +- 0.0087 for the ensemble over three seeds), and it
-cuts the seed-to-seed spread fourfold, because a single prompt's quality swings wildly between
-epochs.
+(0.7045 for one model against 0.8335 for the ensemble), because a single prompt's quality swings
+wildly between epochs.
 
 If you want to reproduce the authors' numbers, `scripts/reference_ensemble.py` subclasses the model
 to do this. It is deliberately not in the library.
@@ -64,8 +63,8 @@ image AUROC on the **test set** is highest, and that state is what enters the co
 is no validation split; the choice is made on the data the result is then reported on.
 
 This is a leak. It is worth **+0.0436 image AUROC** to the reference on VisA. Two symptoms show it is
-fitting noise rather than finding a genuine stopping point: the epoch it picks is unstable across
-seeds (candle 2/0/3, capsules 10/24/22, cashew 15/23/24), and the metric it does not optimise gets
+fitting noise rather than finding a genuine stopping point: the epoch it picks is unstable between
+runs (candle 2/0/3, capsules 10/24/22, cashew 15/23/24), and the metric it does not optimise gets
 slightly worse - pixel AUPR falls from 0.3280 to 0.3269.
 
 pyCLAD never does this. The analysis scripts compute it only so that the reference's own protocol can
@@ -97,13 +96,13 @@ does mean neither is directly comparable to a published number obtained on the o
 
 ### What the three protocols give
 
-VisA, twelve categories, image AUROC, three seeds:
+VisA, twelve categories, image AUROC:
 
 | | pyCLAD | the reference |
 |---|---|---|
-| one model, no ensembling - the paper's method | 0.7045 +- 0.0353 | - |
-| ensemble of 25 epochs, no test labels | 0.8335 +- 0.0087 | 0.8287 +- 0.0042 |
-| ensemble plus the epoch chosen on the test set | 0.8725 +- 0.0046 | 0.8723 +- 0.0026 |
+| one model, no ensembling - the paper's method | 0.7045 | - |
+| ensemble of 25 epochs, no test labels | 0.8335 | 0.8287 |
+| ensemble plus the epoch chosen on the test set | 0.8725 | 0.8723 |
 | published | | 0.874 |
 
 The published figure needs both mechanisms. The reference's own leak-free average is 0.045 below
@@ -124,11 +123,29 @@ scoring, and the map rescaling. What differs is deliberate:
 | randomness | the coreset draws from the global RNG, so a seed does not fix a run | every draw comes from `UCADConfig.seed`; two runs of one configuration agree exactly |
 | epoch ensembling and selection | always | never in the library |
 
-The first two are metric conventions, not model quality: they change what is measured. The squared
-distance leaves image AUROC untouched, since the image score is the maximum over patches and squaring
-preserves order, but it changes the anomaly map, which is squared before being upsampled and
-smoothed. Together the two are worth 0.040 of pixel AUPR on VisA and 0.068 on MVTec in pyCLAD's
-favour; equalise them and the two implementations agree to 0.006 and 0.003 respectively.
+The first two are metric conventions, not model quality: they change what is measured. Together they
+are worth 0.040 of pixel AUPR on VisA and 0.068 on MVTec in pyCLAD's favour; equalise them and the
+two implementations agree to 0.006 and 0.003 respectively.
+
+**Patch score.** The reference reads distances straight out of `faiss.IndexFlatL2`, which returns
+squared L2, and never takes the root. That is an artifact of the index, not a modelling decision -
+the paper writes a distance. Squaring leaves image AUROC untouched, since the image score is the
+maximum over patches and squaring preserves order, but it changes the anomaly map, which is squared
+before being upsampled and smoothed.
+
+**Ground-truth mask.** Bilinear resizing followed by truncation to int keeps only pixels that survive
+at full weight, so annotated boundary pixels are discarded before scoring. Nearest-neighbour resizing
+keeps the annotation intact, which is what a pixel metric is supposed to be measured against.
+
+**Prompt between concepts.** The paper defines one prompt per concept, trained on that concept.
+Carrying the previous concept's prompt into the next one makes a concept's result depend on where it
+falls in the stream, which is not what the memory design describes.
+
+**Randomness.** A seed should fix a run. In the reference the coreset draws from the global RNG, so
+two processes given one seed select different memory vectors.
+
+**Epoch ensembling and selection.** Neither is in the paper, the memory accounting rules the ensemble
+out, and the selection reads test labels. Both stay out of the library; `scripts/` reproduces them.
 
 ## Things worth knowing before you tune it
 
@@ -158,40 +175,6 @@ paper states.
 **The paper's prompt shape does not match the released code.** The paper reports a prompt of size
 (15, 7, 768); the code builds prefix tuning with `prompt_length=1` on twelve layers. We could not
 determine which the published numbers correspond to.
-
-## How these differences were established
-
-Nothing here rests on a single run. The 12-category VisA average moves by up to +-0.03 between seeds
-and candle alone by +-0.07, so every difference quoted above is three seeds per side, and four
-earlier claims made from single runs were withdrawn when they did not survive replication:
-
-| withdrawn claim | what retracted it |
-|---|---|
-| the mask-resampling path is worth +0.042 image | 25 epochs, 3 seeds: candle 0.6172 +- 0.0665 with the reference's maps against 0.6293 +- 0.0106 |
-| the exact coreset is worth +0.043 image | 25 epochs, 3 seeds each: +0.007 +- 0.009 |
-| the two pipelines are numerically equivalent | rested on one coincidental match; the line-by-line trace above replaced it |
-| pyCLAD leads the reference by 0.024 image AUROC | that compared batch 24 against batch 8; at equal batch size it is +0.005 +- 0.006 |
-
-The last one was the hard one to find, and it is worth recording how. At batch 24 pyCLAD scored 0.21
-higher than the reference on candle and matched it on ten of twelve categories. Logging the
-cumulative ensemble after every epoch localised it: epoch 1 agreed (0.6935 +- 0.0833 against 0.6528
-+- 0.0470), which cleared feature extraction and scoring, and from there the reference decayed
-monotonically in every seed while pyCLAD stayed flat. That pattern points at the training step, and
-the training step differed only in how many optimizer steps an epoch took - 123 against 41.
-
-Two candidate differences were tested and cleared before the batch size was found: giving pyCLAD the
-reference's own 14x14 label maps left candle at 0.6172 +- 0.0665 against 0.6293 +- 0.0106, and its
-mask source at 0.6298 +- 0.0471. SAM2 at full resolution, SAM2 at 224 and SAM ViT-B by the authors'
-recipe all carry the same supervision after the 14x14 downsample - candle 7.33 against 7.25 regions,
-positive-pair fraction 0.392 against 0.396.
-
-Two further hypotheses about the method were rejected: the image-score reweighting of Eq. 5-6 sits
-inside seed noise at `reweighting_num_nn=9` and costs 0.08 at 3, and a prompt length of 5 helps only
-where the prompt barely trains, costing 0.05 at 25 epochs.
-
-One defect on pyCLAD's side made the early numbers noisier than they should have been: `seed` reached
-the prompt but not the coreset's random projection, so two processes with one seed picked different
-memory vectors. Fixed; a configuration now reproduces exactly.
 
 ## Reproducing the tables
 
