@@ -24,7 +24,7 @@ from tqdm import tqdm
 from visa_layout import VISA_FOLDER_LAYOUT
 from pyclad.callbacks.evaluation.concept_metric_evaluation import ConceptMetricCallback
 from pyclad.metrics.base.roc_auc import RocAuc
-from pyclad.metrics.continual.continual_average import ContinualAverage
+from pyclad.metrics.continual.average_continual import ContinualAverage
 from pyclad.output.json_writer import JsonOutputWriter
 from pyclad.scenarios.concept_incremental import ConceptIncrementalScenario
 from pyclad.strategies.baselines.naive import NaiveStrategy
