@@ -100,8 +100,18 @@ AUROC is highest. pyCLAD does neither, so a plain run lands **around 0.70 image 
 than the paper's 0.874. `docs/ucad_paper_reference_pyclad.md` explains both mechanisms, what each is
 worth, and has the per-category tables for both implementations under both protocols.
 
-Forgetting is 0.0000 on VisA and MVTec - every post-learning cell of the concept matrix repeats bit
-for bit and task routing is correct on every test image.
+Forgetting is 0.0000 on VisA and MVTec: for every concept, every cell of the concept matrix recorded
+after that concept was learned repeats its just-learned value bit for bit, however many concepts join
+the memory afterwards. Nothing is shared, so the only thing that could move a learned concept's score
+is the key sending its images to a different concept, and that does not happen here.
+
+**Read forgetting off `BackwardTransfer`, not off `ForgettingMeasure`.** pyCLAD's `ForgettingMeasure`
+averages over `range(learned_task + 1)`, so it includes the concept just learned and compares it
+against readings taken before that concept was in memory - readings that are near-random, because the
+model had nothing to score it with. For a model with per-concept memory that term is large and
+negative, and it drags the result below zero: UCAD reads -0.007 to -0.027 there while its actual
+forgetting is exactly 0. The definition the UCAD paper uses (Eq. 7) averages only over concepts
+learned before the last one, which is also what `BackwardTransfer` reports for this model.
 
 ## Known limitations
 
