@@ -155,13 +155,14 @@ what it reports.
 A line-by-line comparison found the two equivalent in every computational step: the input transform,
 the backbone, prefix tuning of the same shape and initialisation, the feature layer, patch
 aggregation, the contrastive loss, the optimizer and schedule, the coreset, nearest-neighbour
-scoring, and the map rescaling. What differs is deliberate:
+scoring, and the map rescaling. It also rebuilds the model
+inside the concept loop after calling `fix_seeds`, so its prefix is re-initialised identically for
+every concept - the same thing pyCLAD's `reset_prompt_per_task` does. What differs is deliberate:
 
 | | the reference | pyCLAD |
 |---|---|---|
 | patch score | squared distance, read from `faiss.IndexFlatL2` with no square root taken | Euclidean distance |
 | ground-truth mask | resized bilinearly, then truncated to int, so only pixels left at full weight count | resized with nearest-neighbour, every nonzero pixel counts |
-| prompt between concepts | carried over from the previous concept | reset per concept (`reset_prompt_per_task`) |
 | randomness | the coreset draws from the global RNG, so a seed does not fix a run | every draw comes from `UCADConfig.seed`; two runs of one configuration agree exactly |
 | epoch ensembling and selection | always | never in the library |
 
@@ -178,10 +179,6 @@ before being upsampled and smoothed.
 **Ground-truth mask.** Bilinear resizing followed by truncation to int keeps only pixels that survive
 at full weight, so annotated boundary pixels are discarded before scoring. Nearest-neighbour resizing
 keeps the annotation intact, which is what a pixel metric is supposed to be measured against.
-
-**Prompt between concepts.** The paper defines one prompt per concept, trained on that concept.
-Carrying the previous concept's prompt into the next one makes a concept's result depend on where it
-falls in the stream, which is not what the memory design describes.
 
 **Randomness.** A seed should fix a run. In the reference the coreset draws from the global RNG, so
 two processes given one seed select different memory vectors.
