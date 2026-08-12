@@ -31,6 +31,48 @@ model = UCADModel(UCADConfig(max_tasks=len(dataset.train_concepts()), input_size
 Expect roughly **0.70 image AUROC on VisA**, not the 0.874 the paper reports. The gap is the two
 mechanisms below.
 
+## How each of the three evaluates
+
+Three different things get called "the result" here. Continual learning is why there is room for the
+confusion: the model is frozen once per concept, so every decision about *when* to freeze it is taken
+twelve times on VisA and fifteen on MVTec, independently, and each of those decisions can be made
+with the test set in view.
+
+**The paper.** Per concept, prefix-tune the prompt for 25 epochs, then store one key, one prompt and
+one coreset-reduced bank. At test time route each image to a concept by nearest key and score its
+patches against that concept's bank. Report image AUROC and pixel AUPR averaged over concepts, plus a
+forgetting measure. No ensembling and no epoch selection appear anywhere, and the memory accounting -
+"a prompt of size (15, 7, 768)" for fifteen concepts - leaves room for one prompt per concept, not
+twenty-five.
+
+**The authors' code.** After each of the 25 epochs it scores the concept's whole test set, rescales
+those scores to 0..1, and averages every epoch so far. It then keeps the epoch whose cumulative
+average has the highest image AUROC *on that test set*, and abandons the concept early if that AUROC
+reaches exactly 1.0. The kept state is what enters the concept memory. So both the reported number
+and the stored model depend on test labels, once per concept.
+
+**pyCLAD.** `fit` trains 25 epochs and keeps the state the last one left. `predict` scores with that
+single state. The numbers come from the framework: `ConceptMetricCallback` and
+`VisionPixelConceptMetricCallback` fill the concept matrix, `BackwardTransfer` reads forgetting off
+it. No label is touched until a callback computes a metric.
+
+### Which reading is which
+
+| reading | ensembles epochs | test labels choose the state | who does it | VisA image AUROC |
+|---|---|---|---|---|
+| single model, last epoch | no | no | pyCLAD | 0.7045 |
+| 25-epoch ensemble, last epoch | yes | no | neither by default; `scripts/reference_ensemble.py` | 0.8335 |
+| 25-epoch ensemble, best epoch | yes | yes | the authors' code | 0.8725 |
+
+Only the first is what `UCADModel.predict` returns, and it is the number to quote for the method as
+the paper describes it. The second is the authors' machinery with the leak taken out; it exists so
+that the reference has something to be compared against that does not read test labels. The tables
+under "Measured results" report the second and third, not the first.
+
+Forgetting is 0.0000 under all three readings, on both benchmarks. Nothing is shared between
+concepts, so the continual metrics cannot tell these protocols apart - the whole difference lives in
+how a single concept's result is read.
+
 ## The authors' evaluation protocol
 
 The released implementation does two things inside its training loop that change the reported number.
@@ -169,8 +211,12 @@ determine which the published numbers correspond to.
 
 ## Measured results
 
-Three seeds per side. "reference protocol" is the reference's own reading, with the epoch chosen on
-the test set; "without selection" is the same 25-epoch ensemble read after the last epoch.
+Three seeds per side. Both columns per implementation are ensembled readings: "without selection" is
+the 25-epoch ensemble after the last epoch, "reference-protocol" is the same ensemble with the epoch
+chosen on the test set. The pyCLAD columns therefore come from `scripts/reference_ensemble.py`, not
+from `UCADModel.predict` - they are what our model scores when put through the authors' machinery, so
+that the two implementations are compared on equal terms. The library's own single-model reading is
+0.7045 image AUROC on VisA.
 
 ### VisA, twelve categories, image AUROC
 
