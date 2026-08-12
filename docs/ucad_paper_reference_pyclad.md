@@ -155,15 +155,13 @@ what it reports.
 A line-by-line comparison found the two equivalent in every computational step: the input transform,
 the backbone, prefix tuning of the same shape and initialisation, the feature layer, patch
 aggregation, the contrastive loss, the optimizer and schedule, the coreset, nearest-neighbour
-scoring, and the map rescaling. It also rebuilds the model
-inside the concept loop after calling `fix_seeds`, so its prefix is re-initialised identically for
-every concept - the same thing pyCLAD's `reset_prompt_per_task` does. What differs is deliberate:
+scoring, and the map rescaling. What differs is deliberate:
 
 | | the reference | pyCLAD |
 |---|---|---|
 | patch score | squared distance, read from `faiss.IndexFlatL2` with no square root taken | Euclidean distance |
 | ground-truth mask | resized bilinearly, then truncated to int, so only pixels left at full weight count | resized with nearest-neighbour, every nonzero pixel counts |
-| randomness | the coreset draws from the global RNG, so a seed does not fix a run | every draw comes from `UCADConfig.seed`; two runs of one configuration agree exactly |
+| where randomness restarts | `fix_seeds(seed)` at the top of every concept, then the model is rebuilt, so every concept draws the same prefix and the same coreset projection | one generator per run, seeded from `UCADConfig.seed`, advancing across concepts, so each concept draws its own |
 | epoch ensembling and selection | always | never in the library |
 
 The first two are metric conventions, not model quality: they change what is measured. Together they
@@ -180,8 +178,12 @@ before being upsampled and smoothed.
 at full weight, so annotated boundary pixels are discarded before scoring. Nearest-neighbour resizing
 keeps the annotation intact, which is what a pixel metric is supposed to be measured against.
 
-**Randomness.** A seed should fix a run. In the reference the coreset draws from the global RNG, so
-two processes given one seed select different memory vectors.
+**Where randomness restarts.** `run_ucad_resumable.py` calls `patchcore.utils.fix_seeds(seed)` at the
+top of the concept loop and then rebuilds the model, so the reference re-draws the identical prefix
+and the identical coreset projection for every concept. One unlucky draw therefore lands on all
+fifteen concepts at once, which is why its seed-to-seed spread is wide - MVTec hazelnut reads 0.7514,
+0.9911, 0.9979 across three seeds where pyCLAD reads 0.9918, 1.0000, 0.9900. pyCLAD seeds one
+generator per run and lets it advance, so a concept's draw is its own and a bad one stays local.
 
 **Epoch ensembling and selection.** Neither is in the paper, the memory accounting rules the ensemble
 out, and the selection reads test labels. Both stay out of the library; `scripts/` reproduces them.
