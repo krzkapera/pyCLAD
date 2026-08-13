@@ -143,7 +143,7 @@ def main():
         full_auroc = [float(roc_auc_score(labels, s)) for s in per_epoch_test]
 
         half = max(1, len(calibration) // 2)
-        banks = [bank.numpy() for _, bank in model._task_members[-1]]
+        banks = [bank.detach().cpu().numpy() for _, bank in model._task_members[-1]]
 
         picks = {
             "last_epoch": len(held_auroc) - 1,
