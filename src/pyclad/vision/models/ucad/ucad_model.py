@@ -59,14 +59,21 @@ class UCADModel(VisionModel):
             reweighting_num_nn=self.config.reweighting_num_nn,
             blur_sigma=self.config.blur_sigma,
         )
-        self.mask_provider = mask_provider if mask_provider is not None else create_mask_provider(
-            self.config, device=self.device
-        )
+        self._mask_provider = mask_provider
         self.current_task_id = 0
         self._coreset_generator = self._seeded_generator()
 
     def _seeded_generator(self) -> torch.Generator:
         return torch.Generator().manual_seed(self.config.seed)
+
+    @property
+    def mask_provider(self) -> MaskProvider:
+        # Built on first request rather than in the constructor: masks are read only by the
+        # contrastive loss, so a run with training_epochs=0 never needs one, and the online provider
+        # would otherwise load a SAM model that nothing goes on to call.
+        if self._mask_provider is None:
+            self._mask_provider = create_mask_provider(self.config, device=self.device)
+        return self._mask_provider
 
     def name(self) -> str:
         return "UCAD"
