@@ -42,7 +42,7 @@ from sklearn.metrics import roc_auc_score
 
 from visa_layout import VISA_FOLDER_LAYOUT
 from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
-from pyclad.vision.models.ucad import UCADConfig
+from pyclad.vision.models.ucad import UCADConfig, UCADModel
 from reference_ensemble import ReferenceEnsembleUCAD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -131,6 +131,11 @@ def main():
         model = ReferenceEnsembleUCAD(config, members=EPOCHS)
         model.fit(fitting)
 
+        # The same concept with the prefix left untrained, so "do not train at all" is a candidate on
+        # exactly the data every criterion is scored on.
+        untrained = UCADModel(config.model_copy(update={"training_epochs": 0}))
+        untrained.fit(fitting)
+
         labels = np.asarray(test_concept.labels)
         val_mask, test_mask = stratified_split(labels, VAL_FRACTION, rng)
         test_paths = np.asarray(test_concept.data)
@@ -163,6 +168,10 @@ def main():
         for criterion, epoch in picks.items():
             summary.setdefault(criterion, []).append(held_auroc[epoch])
         summary.setdefault("oracle_held_out", []).append(max(held_auroc))
+        untrained_scores = untrained.predict(test_paths).anomaly_scores
+        summary.setdefault("no_training", []).append(
+            float(roc_auc_score(labels[test_mask], untrained_scores[test_mask]))
+        )
 
         logger.info(
             "SELECTION %s picks=%s scores=%s", test_concept.name,
