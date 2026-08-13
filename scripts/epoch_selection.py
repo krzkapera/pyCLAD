@@ -36,6 +36,7 @@ import json
 import logging
 import os
 import pathlib
+import zlib
 
 import numpy as np
 from sklearn.metrics import roc_auc_score
@@ -64,6 +65,7 @@ CALIBRATION_FRACTION = float(os.environ.get("UCAD_CALIBRATION_FRACTION", "0.1"))
 RESIZE_MODE = os.environ.get("UCAD_RESIZE_MODE", "short_side_crop")
 BLUR_SIGMA = float(os.environ.get("UCAD_BLUR", "4.0"))
 SEED = int(os.environ.get("UCAD_SEED", "0"))
+CATEGORIES = [c for c in os.environ.get("UCAD_CATEGORIES", "").split(";") if c]
 OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "epoch_selection.json"))
 INPUT_SIZE = (224, 224)
 
@@ -112,12 +114,17 @@ def main():
     )
 
     dataset = read_vision_benchmark_dataset(
-        root=ROOT, benchmark=BENCHMARK, data_mode="paths", resize_to=INPUT_SIZE, resize_mode=RESIZE_MODE
+        root=ROOT, benchmark=BENCHMARK, categories=CATEGORIES or None, data_mode="paths",
+        resize_to=INPUT_SIZE, resize_mode=RESIZE_MODE,
     )
-    rng = np.random.default_rng(SEED)
     summary: dict[str, list[float]] = {}
+    concepts: list[str] = []
 
     for train_concept, test_concept in zip(dataset.train_concepts(), dataset.test_concepts()):
+        # Seeded from the concept's name rather than drawn from one stream, so a run over a subset of
+        # the categories splits each concept exactly as the full run does and the two are comparable.
+        rng = np.random.default_rng([SEED, zlib.crc32(test_concept.name.encode())])
+        concepts.append(test_concept.name)
         train_paths = np.asarray(train_concept.data)
         held_out = rng.permutation(len(train_paths))[: max(1, int(CALIBRATION_FRACTION * len(train_paths)))]
         calibration = train_paths[held_out]
@@ -181,7 +188,7 @@ def main():
 
     logger.info("SELECTION_AVERAGE dataset=%s seed=%d %s", DATASET, SEED,
                 {k: round(float(np.mean(v)), 4) for k, v in summary.items()})
-    OUTPUT_PATH.write_text(json.dumps(summary, indent=2))
+    OUTPUT_PATH.write_text(json.dumps({"concepts": concepts, **summary}, indent=2))
 
 
 if __name__ == "__main__":
