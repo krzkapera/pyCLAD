@@ -12,9 +12,21 @@ labelled validation   the test concept is split in two, stratified by label; the
                       one half and reported on the other. Legitimate, but it needs labelled
                       anomalies, which an unsupervised method is not supposed to have.
 label-free criteria   a slice of the training normals is held out of the bank and scored by the same
-                      model. Nothing here sees an anomaly label, so any of these could run in a real
-                      deployment: the mean and the maximum nearest-neighbour distance of held-out
-                      normals.
+                      model, and the stored bank is inspected directly. Nothing here sees an anomaly
+                      label, so any of these could run in a real deployment:
+
+                      calibration_mean/_max/_p95  where the held-out normals land - a model that
+                                                  scores its own normals low is well calibrated
+                      calibration_fpr             the held-out normals are split in two, the
+                                                  threshold is the 95th percentile of one half and
+                                                  the false positive rate is read off the other
+                      bank_cosine, bank_rank      geometry of the 196 stored vectors, mean pairwise
+                                                  cosine and effective rank, both of which 25 epochs
+                                                  of the authors' loss drive down
+                      test_bimodality             a two-means split of the unlabelled test scores,
+                                                  between-cluster over total variance. This one
+                                                  touches the test images, though never their
+                                                  labels, so it is transductive and stands apart.
 
 Each criterion picks one epoch per concept; all of them are then scored on the same held-out half, so
 the columns are comparable.
@@ -54,6 +66,34 @@ BLUR_SIGMA = float(os.environ.get("UCAD_BLUR", "4.0"))
 SEED = int(os.environ.get("UCAD_SEED", "0"))
 OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "epoch_selection.json"))
 INPUT_SIZE = (224, 224)
+
+
+def effective_rank(vectors: np.ndarray) -> float:
+    spectrum = np.linalg.svd(vectors - vectors.mean(axis=0), compute_uv=False)
+    spectrum = spectrum / max(spectrum.sum(), 1e-12)
+    spectrum = spectrum[spectrum > 0]
+    return float(np.exp(-(spectrum * np.log(spectrum)).sum()))
+
+
+def mean_pairwise_cosine(vectors: np.ndarray) -> float:
+    normalised = vectors / np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-12)
+    similarity = normalised @ normalised.T
+    return float(similarity[~np.eye(len(vectors), dtype=bool)].mean())
+
+
+def bimodality(scores: np.ndarray) -> float:
+    """Between-cluster over total variance for the best two-means split of one-dimensional scores."""
+    ordered = np.sort(scores)
+    total = float(((ordered - ordered.mean()) ** 2).sum())
+    if total <= 0:
+        return 0.0
+
+    best = 0.0
+    for cut in range(1, len(ordered)):
+        low, high = ordered[:cut], ordered[cut:]
+        between = len(low) * (low.mean() - ordered.mean()) ** 2 + len(high) * (high.mean() - ordered.mean()) ** 2
+        best = max(best, float(between))
+    return best / total
 
 
 def stratified_split(labels: np.ndarray, fraction: float, rng: np.random.Generator):
@@ -102,12 +142,22 @@ def main():
         held_auroc = [float(roc_auc_score(labels[test_mask], s[test_mask])) for s in per_epoch_test]
         full_auroc = [float(roc_auc_score(labels, s)) for s in per_epoch_test]
 
+        half = max(1, len(calibration) // 2)
+        banks = [bank.numpy() for _, bank in model._task_members[-1]]
+
         picks = {
             "last_epoch": len(held_auroc) - 1,
             "oracle_full_test": int(np.argmax(full_auroc)),
             "labelled_validation": int(np.argmax(val_auroc)),
             "calibration_mean": int(np.argmin([float(np.mean(s)) for s in per_epoch_calibration])),
             "calibration_max": int(np.argmin([float(np.max(s)) for s in per_epoch_calibration])),
+            "calibration_p95": int(np.argmin([float(np.percentile(s, 95)) for s in per_epoch_calibration])),
+            "calibration_fpr": int(np.argmin([
+                float(np.mean(s[half:] > np.percentile(s[:half], 95))) for s in per_epoch_calibration
+            ])),
+            "bank_cosine": int(np.argmax([mean_pairwise_cosine(b) for b in banks])),
+            "bank_rank": int(np.argmax([effective_rank(b) for b in banks])),
+            "test_bimodality": int(np.argmax([bimodality(s) for s in per_epoch_test])),
         }
 
         for criterion, epoch in picks.items():
