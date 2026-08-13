@@ -150,6 +150,45 @@ VisA, twelve categories, image AUROC:
 The published figure needs both mechanisms. The reference's own leak-free average is 0.045 below
 what it reports.
 
+### Can a validation split replace the leak?
+
+The obvious repair is to choose the epoch on data the result is not reported on.
+`scripts/epoch_selection.py` measures that. Each test concept is split in half, stratified by label;
+every criterion picks one epoch, and every criterion is then scored on the same held-out half, so the
+columns below are directly comparable. Single epochs, not cumulative ensembles - this asks what the
+method as published, one prompt and one bank per concept, is worth when its epoch is chosen honestly.
+Three seeds, twelve VisA and fifteen MVTec categories.
+
+| image AUROC on the held-out half | VisA | MVTec |
+|---|---|---|
+| best epoch on that half - unreachable upper bound | 0.8955 | 0.9623 |
+| epoch chosen on the test labels - the reference's leak | 0.8735 | 0.9566 |
+| **epoch chosen on a labelled validation half** | **0.8123** | **0.9414** |
+| no training at all, zero epochs | 0.8145 | 0.9148 |
+| last epoch | 0.7403 | 0.9191 |
+| best label-free criterion | 0.7886 | 0.9196 |
+
+A validation split does remove the leak, and it is worth having: +0.072 over the last epoch on VisA,
++0.022 on MVTec. It does not recover the published number. The leak is worth a further +0.061 on VisA
+and +0.015 on MVTec over honest selection on the same images, which is most of the distance between a
+leak-free reading and 0.874.
+
+**On VisA, honest selection does not beat not training at all** - 0.8123 against 0.8145, inside the
+seed spread of either. Twenty-five epochs of prompt tuning, with the best of them picked by a
+validation set, lands where the frozen backbone already was; per concept the validation-selected
+model wins on 4 of 12. MVTec is the exception, +0.027 over untrained, and it is not spread out:
+screw +0.257, cable +0.074, hazelnut +0.049 carry it, and the other twelve categories move by less
+than +0.02 in either direction. Screw is the category whose defects are smaller than one patch of the
+feature grid, so it is the one place where a trained prompt has something to add.
+
+Nothing label-free works. Where held-out normals land (mean, max, 95th percentile), the false
+positive rate of one half of them against a threshold from the other, the geometry of the stored bank
+(mean pairwise cosine, effective rank), and a two-means split of the unlabelled test scores all land
+within 0.02 of the last epoch on MVTec and below the untrained model on both benchmarks. They are
+measuring the wrong thing: the loss changes the feature geometry monotonically with training, while
+detection quality moves up and down inside that trend, so a criterion that tracks the geometry tracks
+the epoch count rather than the quality.
+
 ## Forgetting, and why the paper's is not zero
 
 The paper's Eq. 7 is the usual forgetting measure: `T_{l,j}` is the score on concept `j` after
