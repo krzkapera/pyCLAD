@@ -150,6 +150,37 @@ VisA, twelve categories, image AUROC:
 The published figure needs both mechanisms. The reference's own leak-free average is 0.045 below
 what it reports.
 
+## Forgetting, and why the paper's is not zero
+
+The paper's Eq. 7 is the usual forgetting measure: `T_{l,j}` is the score on concept `j` after
+concept `l` was learned, the inner `max` over `l in {1..k-1}` is the best that concept `j` ever read
+during the stream, `T_{k,j}` is its reading after everything has been learned, and the average runs
+over `j = 1..k-1`, every concept except the last. `k` is the number of concepts in the stream -
+twelve on VisA, fifteen on MVTec - and the paper evaluates with `k` at its maximum. Positive means a
+concept got worse than it once was.
+
+pyCLAD reads 0.0000 against the paper's 0.039 on MVTec and 0.015 on VisA, and the zero is not an
+artifact of averaging. Every cell of the concept matrix recorded after a concept was learned repeats
+that concept's just-learned value bit for bit: `max |M[l][e] - M[e][e]|` over all concepts and all
+later learning steps is exactly 0 on both benchmarks, trained and untrained.
+
+There is only one mechanism that could move it. Nothing is shared between concepts, so a learned
+concept's score can change only if the key starts routing its images somewhere else once the memory
+holds more candidates. It does not: `scripts/routing_accuracy.py` puts every test image through the
+full memory and gets 1440/1440 on VisA and 1725/1725 on MVTec, at zero epochs and after 25.
+
+A nonzero forgetting measure for this architecture therefore says the reference's routing errs as
+concepts accumulate. We have not measured its routing, and the released code makes it easy to miss:
+the per-epoch evaluation inside the training loop scores against the current concept's own bank and
+never routes at all, so routing only enters in the final pass over all concepts, which is also the
+pass the reported forgetting comes from.
+
+One caveat when quoting pyCLAD's own numbers: `ForgettingMeasure` averages over
+`range(learned_task + 1)`, so it includes the concept just learned and compares it against readings
+taken before that concept was in memory. For per-concept memory those readings are near-random, the
+term is large and negative, and the metric returns -0.007 to -0.027 where the paper's definition
+returns 0. `BackwardTransfer` agrees with Eq. 7 here.
+
 ## Where pyCLAD deliberately differs from the authors' code
 
 A line-by-line comparison found the two equivalent in every computational step: the input transform,
