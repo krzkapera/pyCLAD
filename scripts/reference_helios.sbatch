@@ -20,7 +20,7 @@ set -uo pipefail
 ml ML-bundle/25.10
 
 BASE=/net/scratch/hscra/plgrid/plgkrzkapera/pp
-REPO=$BASE/ucad-ref-run
+REPO=$BASE/ucad-git
 cd "$REPO"
 
 export HF_HOME=$BASE/cache/hf
@@ -29,6 +29,7 @@ export XDG_CACHE_HOME=$BASE/cache/xdg
 export TMPDIR=$BASE/cache/tmp
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export UCAD_MEM_LIMIT_GB=40
+export UCAD_LOG_EPOCHS=1
 
 REF_DATASET=${REF_DATASET:-visa}
 REF_SEED=${REF_SEED:-0}
@@ -54,7 +55,7 @@ CATEGORIES=${REF_CATEGORIES:-$DEFAULT_CATEGORIES}
 D_FLAGS=""
 for c in $CATEGORIES; do D_FLAGS="$D_FLAGS -d $c"; done
 
-$BASE/.venv-ml/bin/python launch.py --gpu 0 --seed $REF_SEED --memory_size 196 --epochs_num ${REF_EPOCHS:-25} \
+$BASE/.venv-ml/bin/python scripts/launch.py --gpu 0 --seed $REF_SEED --memory_size 196 --epochs_num ${REF_EPOCHS:-25} \
     --log_group FULL --log_project UCADREF "$RUN_DIR/results" \
     ucad -b wideresnet50 -le layer2 -le layer3 \
     --pretrain_embed_dimension 1024 --target_embed_dimension 1024 \
