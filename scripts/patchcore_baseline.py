@@ -12,9 +12,13 @@ prefix and everything that exists to train it, so this is the same method with t
 out rather than the trained part switched off.
 
 There is no key routing either. Routing exists to put each concept's patches in front of the prompt
-and bank trained for them; with no prompt every bank lives in the same feature space, so identifying
-the concept selects which vectors to search and changes nothing else. The memory still holds 196
-vectors per concept, exactly UCAD's budget - the search simply runs over all of them.
+and bank trained for them, and with no prompt every bank lives in the same feature space, so nothing
+concept-specific is left for it to select: no separate model, transform or threshold, only a smaller
+set of vectors to search. That is not free of consequence - searching every bank is a superset, so
+each patch's nearest-neighbour distance can only fall, and whether that helps depends on whether
+anomalous patches find matches in other concepts before normal ones do. Measured, it moves the VisA
+average by +0.016 and the MVTec average by -0.007, which is noise in both directions. The memory
+still holds 196 vectors per concept, exactly UCAD's budget; the search simply runs over all of them.
 """
 
 import logging
