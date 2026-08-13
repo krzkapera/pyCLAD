@@ -3,6 +3,7 @@
 Usage: patchcore_baseline.py      (configured through the environment, see ucad_probe.py)
 
     UCAD_MEMORY_SIZE   coreset vectors kept per concept   (default 196, UCAD's budget)
+    UCAD_ROUTING       key | union                        (default key)
 
 Everything the authors' repository fixes is fixed the same way here: a frozen ViT-B/16 read after
 block 5, its 196 patch tokens, PatchCore aggregation at patchsize 1 into 1024 dimensions, a greedy
@@ -11,14 +12,12 @@ image score, and the patch grid upsampled to 224x224 and blurred with sigma 4. W
 prefix and everything that exists to train it, so this is the same method with the trained part taken
 out rather than the trained part switched off.
 
-There is no key routing either. Routing exists to put each concept's patches in front of the prompt
-and bank trained for them, and with no prompt every bank lives in the same feature space, so nothing
-concept-specific is left for it to select: no separate model, transform or threshold, only a smaller
-set of vectors to search. That is not free of consequence - searching every bank is a superset, so
-each patch's nearest-neighbour distance can only fall, and whether that helps depends on whether
-anomalous patches find matches in other concepts before normal ones do. Measured, it moves the VisA
-average by +0.016 and the MVTec average by -0.007, which is noise in both directions. The memory
-still holds 196 vectors per concept, exactly UCAD's budget; the search simply runs over all of them.
+Routing stays, and it is the default. In UCAD the key picks a pair - the prompt to run the image
+through and the bank to score it against - so removing the prompt takes away the first half and
+leaves the second. That half still does something a continual method needs: it keeps the concepts
+apart, so an anomalous patch of one concept cannot be explained away by the normal patches of
+another. UCAD_ROUTING=union drops it and searches every bank at once, which is the ablation, not the
+baseline.
 """
 
 import logging
@@ -58,6 +57,7 @@ DATASET = os.environ.get("UCAD_DATASET", "visa")
 ROOT_VAR, BENCHMARK = BENCHMARKS[DATASET]
 ROOT = os.environ[ROOT_VAR]
 MEMORY_SIZE = int(os.environ.get("UCAD_MEMORY_SIZE", "196"))
+ROUTING = os.environ.get("UCAD_ROUTING", "key")
 BATCH_SIZE = int(os.environ.get("UCAD_BATCH_SIZE", "8"))
 RESIZE_MODE = os.environ.get("UCAD_RESIZE_MODE", "short_side_crop")
 BLUR_SIGMA = float(os.environ.get("UCAD_BLUR", "4.0"))
@@ -134,7 +134,7 @@ class PatchCoreModel(VisionModel):
     def additional_info(self) -> Dict[str, Any]:
         return {
             "backbone": BACKBONE, "feature_block": FEATURE_BLOCK, "patchsize": PATCHSIZE,
-            "embed_dim": EMBED_DIM, "memory_size": MEMORY_SIZE,
+            "embed_dim": EMBED_DIM, "memory_size": MEMORY_SIZE, "routing": ROUTING,
             "blur_sigma": BLUR_SIGMA, "seed": SEED,
         }
 
@@ -157,6 +157,15 @@ class PatchCoreModel(VisionModel):
         self.banks.append(coreset(features.reshape(-1, EMBED_DIM), MEMORY_SIZE, self.generator))
         logger.info("PATCHCORE concept %d stored, memory holds %d vectors", len(self.banks), sum(map(len, self.banks)))
 
+    def _select(self, features: torch.Tensor) -> torch.Tensor:
+        batch, patches, channels = features.shape
+        flat = features.reshape(-1, channels)
+        summed = [
+            torch.cdist(flat, bank.to(self.device)).min(dim=1).values.reshape(batch, patches).sum(dim=1)
+            for bank in self.banks
+        ]
+        return torch.stack(summed, dim=1).argmin(dim=1)
+
     def _score(self, features: torch.Tensor, bank: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
         batch, patches, channels = features.shape
         nearest = torch.cdist(features.reshape(-1, channels), bank).min(dim=1).values.reshape(batch, patches)
@@ -170,11 +179,24 @@ class PatchCoreModel(VisionModel):
     @torch.no_grad()
     def predict(self, data) -> VisionPredictionResults:
         loader = DataLoader(PathDataset(data), batch_size=BATCH_SIZE, shuffle=False)
-        memory = torch.cat(self.banks).to(self.device)
+        union = torch.cat(self.banks).to(self.device) if ROUTING == "union" else None
 
         scores, maps = [], []
         for batch in tqdm(loader, desc="Scoring", leave=False):
-            batch_scores, batch_maps = self._score(self._tokens(batch.to(self.device)), memory)
+            features = self._tokens(batch.to(self.device))
+
+            if union is not None:
+                batch_scores, batch_maps = self._score(features, union)
+            else:
+                batch_scores = np.empty(len(features))
+                batch_maps = np.empty((len(features), *INPUT_SIZE))
+                chosen = self._select(features)
+                for concept in chosen.unique().tolist():
+                    picked = chosen == concept
+                    sub_scores, sub_maps = self._score(features[picked], self.banks[concept].to(self.device))
+                    batch_scores[picked.cpu().numpy()] = sub_scores
+                    batch_maps[picked.cpu().numpy()] = sub_maps
+
             scores.append(batch_scores)
             maps.append(batch_maps)
 
@@ -188,8 +210,8 @@ class PatchCoreModel(VisionModel):
 
 def main():
     logger.info(
-        "PATCHCORE dataset=%s backbone=%s block=%d memory=%d seed=%d",
-        DATASET, BACKBONE, FEATURE_BLOCK, MEMORY_SIZE, SEED,
+        "PATCHCORE dataset=%s backbone=%s block=%d memory=%d routing=%s seed=%d",
+        DATASET, BACKBONE, FEATURE_BLOCK, MEMORY_SIZE, ROUTING, SEED,
     )
 
     dataset = read_vision_benchmark_dataset(
