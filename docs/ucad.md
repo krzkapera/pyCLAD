@@ -93,11 +93,14 @@ implies, and it is the place to change if you want concepts to see different ord
 A single run of this method is a weak measurement, and it is worth knowing that before reading
 anything into a comparison.
 
-The prompt's quality swings from epoch to epoch rather than converging: within one run the per-epoch
-image AUROC of one category moves by as much as 0.42. What the model keeps is whatever the last epoch
-happened to leave, one arbitrary point of that trajectory. Across seeds that shows up as roughly
-+-0.03 on the twelve-category VisA average and +-0.07 on a single category such as candle. A change
-smaller than that is not a change; measure over at least three seeds before believing one.
+The prompt's quality swings from epoch to epoch rather than converging. Within one run the per-epoch
+image AUROC of a single category moves by 0.16 to 0.25 typically and by up to 0.42 at worst, and how
+much of that is the model rather than the estimate depends on how many normal images the test set has -
+the swing is about a third smaller on VisA's official split, which holds five times as many, than on
+the per-category folder copy. What the model keeps is whatever the last epoch happened to leave, one
+arbitrary point of that trajectory. Across seeds that shows up as roughly +-0.03 on the
+twelve-category VisA average and +-0.07 on a single category such as candle. A change smaller than
+that is not a change; measure over at least three seeds before believing one.
 
 With `seed` fixed a configuration reproduces exactly - every draw a run makes, including the coreset's
 random projection, comes from it. That is convenient and also the trap: a single seed reproduces
