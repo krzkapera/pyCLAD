@@ -108,10 +108,12 @@ perfectly and still tells you very little.
 A plain run reports one model, and lands around **0.70 image AUROC on VisA** against the paper's
 0.874, measured over three seeds on the per-category folder copy of the dataset. VisA's official
 `split_csv/1cls.csv` division puts five times as many normal images in the test set and reads several
-points higher; if you compare against a published VisA number, check which split produced it. The gap is not an implementation difference. The authors' code
-reports the mean of all 25 epochs' rescaled scores, at the epoch whose image AUROC on the test set is
-highest; those two undescribed mechanisms are worth +0.129 and +0.044 respectively, and put through
-the same machinery this implementation reaches 0.8725 against the reference's 0.8723.
+points higher; if you compare against a published VisA number, check which split produced it.
+
+That gap is not an implementation difference. The authors' code reports the mean of all 25 epochs'
+rescaled scores, at the epoch whose image AUROC on the test set is highest; those two undescribed
+mechanisms are worth +0.129 and +0.044 respectively, and put through the same machinery this
+implementation reaches 0.8725 against the reference's 0.8723.
 
 **A configuration with `training_epochs=0` scores as well or better.** On VisA the contrastive loss
 costs about 0.006 image AUROC over 25 epochs and on MVTec it changes nothing; the apparent benefit in
