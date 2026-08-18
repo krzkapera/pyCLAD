@@ -10,6 +10,9 @@ Every model ships with a ready-to-run example under `examples/models/vision/`.
 |---|---|--|
 | **PaSTe** | Student–teacher distillation | `paste_torch_example.py` |
 | **FastFlow** | Normalizing flow on features | `fastflow_torch_example.py` |
+| **UCAD** | Per-concept prompt and coreset memory on a frozen ViT | `ucad_mvtec_example.py`, `ucad_visa_example.py` |
+
+UCAD needs SAM masks and a specific reading mode; `ucad.md` covers its setup and what to expect from it.
 
 ## Setup — extra libraries required
 

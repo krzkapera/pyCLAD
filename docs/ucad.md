@@ -42,7 +42,8 @@ apart, so it needs one mask per training image. Point `sam_masks_dir` at a direc
 dataset root and `sam_images_root` at that root; leave `sam_masks_dir` unset to generate masks online
 instead, which is far slower. A missing mask raises `FileNotFoundError` - without one the loss would
 see a single uniform region and no negative pairs at all, so a wrong mask directory has to stop the
-run rather than quietly cost it several points.
+run rather than quietly cost it several points. With `training_epochs=0` no mask is ever read and the
+provider is never built.
 
 **Paths, not arrays.** Read the dataset with `data_mode="paths"`. The model loads the images itself
 because the mask provider resolves masks by image path; with arrays the paths are synthesised names,
@@ -58,6 +59,7 @@ original method resizes the short side and centre-crops.
 
 | | default |
 |---|---|
+| `vit_model_name` / `pretrained` | `vit_base_patch16_224` / True |
 | `input_size` / `resize_mode` | (224, 224) / `short_side_crop` |
 | `training_epochs` / `batch_size` | 25 / 8 |
 | `learning_rate` / `grad_clip` | 5e-4 / 1.0 |
@@ -70,7 +72,16 @@ original method resizes the short side and centre-crops.
 | `reset_prompt_per_task` | True |
 | `seed` | 0, covers every draw a run makes |
 
-`docs/ucad_paper_reference_pyclad.md` says where each default comes from.
+**Which pretrained weights you get matters, by up to 0.07 image AUROC.** `pretrained=True` hands the
+name to timm, which currently resolves `vit_base_patch16_224` to an ImageNet-21k checkpoint
+fine-tuned on ImageNet-1k. The published method uses ImageNet-21k with no fine-tuning. Set
+`vit_model_name="vit_base_patch16_224.orig_in21k"` for that one. The library keeps timm's default so
+that a plain run does not depend on which timm version you have.
+
+**`knowledge_size` is the strongest knob in the model.** It is the number of vectors kept per concept,
+196 by default, which is one image's worth of patches. Raising it improves detection substantially and
+monotonically at the cost of memory - the point of the method is that it stays small, so raise it
+knowingly.
 
 **Every concept shuffles with the same permutation.** `_as_loader` builds a fresh generator seeded
 from `config.seed` on each call, so concept 2 iterates its data in the same permutation sequence as
@@ -94,16 +105,23 @@ perfectly and still tells you very little.
 
 ## What to expect
 
-The reference implementation reports numbers obtained under an evaluation protocol its paper does not
-describe: it averages the scores of all 25 epochs and then reports the epoch whose test-set image
-AUROC is highest. pyCLAD does neither, so a plain run lands **around 0.70 image AUROC on VisA** rather
-than the paper's 0.874. `docs/ucad_paper_reference_pyclad.md` explains both mechanisms, what each is
-worth, and has the per-category tables for both implementations under both protocols.
+A plain run reports one model, and lands around **0.70-0.78 image AUROC on VisA** depending on the
+data split, against the paper's 0.874. The gap is not an implementation difference. The authors' code
+reports the mean of all 25 epochs' rescaled scores, at the epoch whose image AUROC on the test set is
+highest; those two undescribed mechanisms are worth +0.129 and +0.044 respectively, and put through
+the same machinery this implementation reaches 0.8725 against the reference's 0.8723.
+
+**A configuration with `training_epochs=0` scores as well or better.** On VisA the contrastive loss
+costs about 0.006 image AUROC over 25 epochs and on MVTec it changes nothing; the apparent benefit in
+the published ablation comes from the reporting protocol rather than from the loss. If you want the
+method's detection quality without its training cost, set `training_epochs=0`: no SAM masks are needed
+and a concept is fitted in one forward pass.
 
 Forgetting is 0.0000 on VisA and MVTec: for every concept, every cell of the concept matrix recorded
 after that concept was learned repeats its just-learned value bit for bit, however many concepts join
 the memory afterwards. Nothing is shared, so the only thing that could move a learned concept's score
-is the key sending its images to a different concept, and that does not happen here.
+is the key sending its images to a different concept, and that does not happen - routing is correct on
+every test image of both benchmarks.
 
 **Read forgetting off `BackwardTransfer`, not off `ForgettingMeasure`.** pyCLAD's `ForgettingMeasure`
 averages over `range(learned_task + 1)`, so it includes the concept just learned and compares it
@@ -118,16 +136,24 @@ learned before the last one, which is also what `BackwardTransfer` reports for t
 **The contrastive loss does not help on these benchmarks.** After one epoch the prompted features are
 99.9% cosine-identical to the frozen ones, so the model is PatchCore on a frozen ViT. After 25 epochs
 they have moved a long way in the wrong direction - mean pairwise cosine falls from 0.42 to 0.18 and
-effective rank from 297 to 217 - which erodes the locality nearest-neighbour scoring depends on. A
-no-SCL configuration reaches 0.7833/0.2718 on VisA, matching the paper's own CPM-only row.
+effective rank from 297 to 217 - which erodes the locality nearest-neighbour scoring depends on.
 
-**MVTec's screw is out of reach.** Both implementations are near-random and neither approaches the
-paper's 0.739. It is the feature grid, not the training: ViT-B/16 at 224 gives 14x14 patches, one
-patch covering 73x73 pixels of the 1024x1024 original, while screw's defects are a few pixels wide.
-At zero epochs screw already scores 0.5638; with `vit_base_patch8_224`, which gives 28x28 patches at
-the same input size, 0.6602 at zero epochs and 0.8660 after 25.
+**Small defects are limited by the patch grid, not by the training.** ViT-B/16 at 224 gives 14x14
+patches, one patch covering 73x73 pixels of a 1024x1024 original, while MVTec's screw has defects a
+few pixels wide and scores near-random with timm's default weights. Two things help and neither is
+training: `vit_model_name="vit_base_patch8_224"` gives 28x28 patches at the same input size, and
+raising `knowledge_size` in step with the finer grid - a bank of 196 vectors compresses four times
+harder at 28x28 and loses what the finer grid gained.
 
-## See also
+## Where the analysis lives
 
-`docs/ucad_paper_reference_pyclad.md` - what the paper specifies, what the authors' code actually
-does, where pyCLAD departs from either, and the measured results.
+The evidence behind the two statements above - that the loss contributes nothing and that the
+published numbers need an undescribed reporting protocol - is not in this repository. It is in a fork
+of the authors' code, where each claim can be checked against the code that produced it:
+
+- `scripts/FINDINGS.md` - how we know the contrastive loss contributes nothing
+- `scripts/REPRODUCTION.md` - reproducing the published tables, and what it takes
+- `scripts/EVALUATION.md` - the reporting protocol taken apart, and honest replacements
+- `scripts/MEASUREMENTS.md` - backbone checkpoints, feature grid, bank size, and open questions
+
+https://github.com/krzkapera/ucad/tree/claude/experiment-scripts/scripts
