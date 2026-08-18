@@ -111,12 +111,14 @@ A plain run reports one model, and lands around **0.70 image AUROC on VisA** aga
 points higher; if you compare against a published VisA number, check which split produced it.
 
 That gap is not an implementation difference. The authors' code reports the mean of all 25 epochs'
-rescaled scores, at the epoch whose image AUROC on the test set is highest; those two undescribed
-mechanisms are worth +0.129 and +0.044 respectively, and put through the same machinery this
-implementation reaches 0.8725 against the reference's 0.8723.
+rescaled scores, at the epoch whose image AUROC on the test set is highest. Measured here, the
+averaging is worth +0.129 and the epoch choice a further +0.039, and put through the same machinery
+this implementation reaches 0.8725 against the reference's 0.8723.
 
-**A configuration with `training_epochs=0` scores as well or better.** On VisA the contrastive loss
-costs about 0.006 image AUROC over 25 epochs and on MVTec it changes nothing; the apparent benefit in
+**A configuration with `training_epochs=0` scores as well or better.** Measured here on VisA, training
+for 25 epochs and keeping the last one costs 0.06 to 0.07 image AUROC against not training at all, and
+stopping early on a labelled validation split brings it back to level - 0.8123 against 0.8145 on the
+folder copy, 0.8316 against 0.8381 on the official split, three seeds each. The apparent benefit in
 the published ablation comes from the reporting protocol rather than from the loss. If you want the
 method's detection quality without its training cost, set `training_epochs=0`: no SAM masks are needed
 and a concept is fitted in one forward pass.
