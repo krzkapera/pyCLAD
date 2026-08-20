@@ -142,10 +142,22 @@ learned before the last one, which is also what `BackwardTransfer` reports for t
 
 ## Known limitations
 
-**The contrastive loss does not help on these benchmarks.** After one epoch the prompted features are
-99.9% cosine-identical to the frozen ones, so the model is PatchCore on a frozen ViT. After 25 epochs
-they have moved a long way in the wrong direction - mean pairwise cosine falls from 0.42 to 0.18 and
-effective rank from 297 to 217 - which erodes the locality nearest-neighbour scoring depends on.
+**The contrastive loss does not help as configured, and the reason is a geometry mismatch.** After one
+epoch the prompted features are 99.9% cosine-identical to the frozen ones, so the model is PatchCore
+on a frozen ViT. Over 25 epochs the loss does what it promises - patches of one SAM mask draw together
+and patches of different masks separate, monotonically - but it normalises the features before
+measuring anything, so it constrains directions only, while `NearestNeighborScorer` measures Euclidean
+distance on the unnormalised vectors. Measured on the features that reach the bank, their norms have a
+standard deviation 1.5 to 1.8 times their mean, so the distance the score reads is dominated by the
+one quantity the loss never sees.
+
+L2-normalising the features on the way into the bank and the query removes the mismatch. Measured in a
+fork of the authors' code, it is worth +0.015 to +0.030 image AUROC on its own - more than the
+training - and it is the only change that makes the loss pay: on VisA the trained model then beats its
+own untrained control by +0.009 image and +0.025 pixel over three disjoint seed ranges, where without
+it the loss is neutral to slightly harmful. This implementation does not do it, to stay faithful to
+the published method; if you want it, normalise the output of `patchcore_aggregate` before it reaches
+`greedy_coreset_sampling` and `NearestNeighborScorer`.
 
 **Small defects are limited by the patch grid, not by the training.** ViT-B/16 at 224 gives 14x14
 patches, one patch covering 73x73 pixels of a 1024x1024 original, while MVTec's screw has defects a
