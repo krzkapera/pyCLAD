@@ -5,6 +5,7 @@ import torch.nn as nn
 class PrefixTuningPrompt(nn.Module):
     def __init__(
         self,
+        generator: torch.Generator,
         num_layers: int = 12,
         prompt_length: int = 1,
         num_heads: int = 12,
@@ -22,12 +23,14 @@ class PrefixTuningPrompt(nn.Module):
         self.head_dim = embed_dim // num_heads
 
         prompt_shape = (num_layers, 2, prompt_length, num_heads, self.head_dim)
+        self._generator = generator
         self.prompt = nn.Parameter(torch.empty(prompt_shape))
         self.reset_prompt()
 
     def reset_prompt(self):
         with torch.no_grad():
-            nn.init.uniform_(self.prompt, -1, 1)
+            values = torch.empty(self.prompt.shape).uniform_(-1, 1, generator=self._generator)
+            self.prompt.copy_(values)
 
     def get_prompt_state(self) -> torch.Tensor:
         return self.prompt.detach().clone()

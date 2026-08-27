@@ -21,7 +21,7 @@ from pyclad.vision.models.ucad.inputs import (
 )
 from pyclad.vision.models.ucad.memory import TaskMemoryBank
 from pyclad.vision.models.ucad.prompt import PrefixTuningPrompt
-from pyclad.vision.models.ucad.sam import MaskProvider
+from pyclad.vision.models.ucad.sam import MaskProvider, SAM2OfflineMaskProvider
 
 INPUT_SIZE = (224, 224)
 
@@ -48,6 +48,10 @@ def _tiny_config(**overrides) -> UCADConfig:
     )
     defaults.update(overrides)
     return UCADConfig(**defaults)
+
+
+def _generator(seed: int = 0) -> torch.Generator:
+    return torch.Generator().manual_seed(seed)
 
 
 def _images(rng, n: int, brightness: int = 128) -> np.ndarray:
@@ -108,55 +112,71 @@ class TestInputAdapters:
         torch.testing.assert_close(image, expected.expand(3, *INPUT_SIZE).contiguous())
 
 
+class TestOfflineMaskProvider:
+    def test_missing_mask_is_an_error(self, tmp_path):
+        paths = _write_images(tmp_path, np.random.default_rng(0), 1)
+        provider = SAM2OfflineMaskProvider(masks_dir=tmp_path / "masks", images_root=tmp_path)
+
+        with pytest.raises(FileNotFoundError, match="No SAM mask"):
+            provider.get_masks(list(paths))
+
+    def test_synthetic_paths_are_an_error(self, tmp_path):
+        provider = SAM2OfflineMaskProvider(masks_dir=tmp_path / "masks", images_root=tmp_path)
+
+        with pytest.raises(FileNotFoundError, match="data_mode='paths'"):
+            provider.get_masks(["concept_0_0.png"])
+
+
 class TestMemoryBank:
     def test_stored_state_is_not_aliased_by_the_live_prompt(self):
-        prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, num_heads=2, embed_dim=4)
+        prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, generator=_generator(), num_heads=2, embed_dim=4)
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), prompt_state=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))
-        stored = memory.get_prompt_state(0).clone()
+        memory.add_task(0, key=torch.zeros(2, 4), prompt=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))
+        stored = memory.get_task(0).prompt.clone()
 
         prompt.reset_prompt()
 
-        torch.testing.assert_close(memory.get_prompt_state(0), stored)
+        torch.testing.assert_close(memory.get_task(0).prompt, stored)
 
     def test_restoring_a_task_does_not_mutate_the_bank(self):
-        prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, num_heads=2, embed_dim=4)
+        prompt = PrefixTuningPrompt(num_layers=1, prompt_length=1, generator=_generator(), num_heads=2, embed_dim=4)
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), prompt_state=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))
-        stored = memory.get_prompt_state(0).clone()
+        memory.add_task(0, key=torch.zeros(2, 4), prompt=prompt.get_prompt_state(), knowledge=torch.zeros(2, 4))
+        stored = memory.get_task(0).prompt.clone()
 
-        prompt.set_prompt_state(memory.get_prompt_state(0))
+        prompt.set_prompt_state(memory.get_task(0).prompt)
         prompt.reset_prompt()
 
-        torch.testing.assert_close(memory.get_prompt_state(0), stored)
+        torch.testing.assert_close(memory.get_task(0).prompt, stored)
 
     def test_bank_rejects_more_tasks_than_configured(self):
         memory = TaskMemoryBank(max_tasks=1)
-        memory.add_task(0, key=torch.zeros(2, 4), prompt_state=torch.zeros(2), knowledge=torch.zeros(2, 4))
+        memory.add_task(0, key=torch.zeros(2, 4), prompt=torch.zeros(2), knowledge=torch.zeros(2, 4))
 
         with pytest.raises(RuntimeError):
-            memory.add_task(1, key=torch.zeros(2, 4), prompt_state=torch.zeros(2), knowledge=torch.zeros(2, 4))
+            memory.add_task(1, key=torch.zeros(2, 4), prompt=torch.zeros(2), knowledge=torch.zeros(2, 4))
 
 
 class TestCoreset:
-    def test_exact_mode_is_deterministic(self):
+    def test_both_modes_are_reproducible_from_the_generator(self):
         features = torch.randn(40, 8)
 
-        first = greedy_coreset_sampling(features, 5, mode="exact")
-        second = greedy_coreset_sampling(features, 5, mode="exact")
+        for mode in ("greedy", "approximate"):
+            first = greedy_coreset_sampling(features, 5, _generator(), mode=mode)
+            second = greedy_coreset_sampling(features, 5, _generator(), mode=mode)
 
-        torch.testing.assert_close(first, second)
+            torch.testing.assert_close(first, second)
 
     def test_both_modes_return_the_requested_size(self):
         features = torch.randn(40, 8)
 
-        assert greedy_coreset_sampling(features, 5, mode="exact").shape == (5, 8)
-        assert greedy_coreset_sampling(features, 5, mode="approximate").shape == (5, 8)
+        assert greedy_coreset_sampling(features, 5, _generator(), mode="greedy").shape == (5, 8)
+        assert greedy_coreset_sampling(features, 5, _generator(), mode="approximate").shape == (5, 8)
 
     def test_returns_input_when_smaller_than_target(self):
         features = torch.randn(3, 8)
 
-        torch.testing.assert_close(greedy_coreset_sampling(features, 5, mode="exact"), features)
+        torch.testing.assert_close(greedy_coreset_sampling(features, 5, _generator(), mode="greedy"), features)
 
 
 class TestModelIntegration:
@@ -167,7 +187,7 @@ class TestModelIntegration:
         model.memory.add_task(
             0,
             key=torch.zeros(4, model.config.target_embed_dimension),
-            prompt_state=model.backbone.get_prompt_state(),
+            prompt=model.backbone.get_prompt_state(),
             knowledge=torch.zeros(4, model.config.target_embed_dimension),
         )
 
@@ -210,17 +230,17 @@ class TestModelIntegration:
         assert model.memory.num_tasks == 2
         assert set(callback.info()["concept_metric_callback_ROC-AUC"]["metric_matrix"]) == {"t0", "t1"}
 
-    def test_task_key_does_not_depend_on_batch_order(self):
-        """The greedy coreset seeds from the first feature, so extraction must not see the shuffled order."""
+    def test_feature_extraction_does_not_see_the_shuffled_order(self):
+        """Coreset selection is order-dependent, so extraction must read the dataset order whatever the shuffle."""
         images = _images(np.random.default_rng(0), 6)
-        keys = []
+        extracted = []
         for seed in (0, 12345):
             torch.manual_seed(1)
-            model = UCADModel(_tiny_config(training_epochs=0, seed=seed), mask_provider=ConstantMaskProvider())
-            model.fit(images)
-            keys.append(model.memory.tasks[0].key)
+            model = UCADModel(_tiny_config(seed=seed), mask_provider=ConstantMaskProvider())
+            shuffled = model._as_loader(images, shuffle=True)
+            extracted.append(model._extract_all_features(model._sequential_view(shuffled), use_prompt=False))
 
-        torch.testing.assert_close(keys[0], keys[1])
+        torch.testing.assert_close(extracted[0], extracted[1])
 
     def test_info_carries_the_configuration(self):
         model = UCADModel(_tiny_config(patchsize=1), mask_provider=ConstantMaskProvider())

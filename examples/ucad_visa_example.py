@@ -13,7 +13,7 @@ from pyclad.strategies.baselines.naive import NaiveStrategy
 from pyclad.vision.callbacks.vision_pixel_concept_metric_callback import (
     VisionPixelConceptMetricCallback,
 )
-from pyclad.vision.data.benchmarks.readers import read_vision_benchmark_dataset
+from pyclad.vision.data.benchmarks.readers import FolderBenchmarkSpec, read_vision_benchmark_dataset
 from pyclad.vision.metrics.pixel_average_precision import PixelAveragePrecision
 from pyclad.vision.metrics.pixel_roc_auc import PixelRocAuc
 from pyclad.vision.models.ucad import UCADConfig, UCADModel
@@ -22,8 +22,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 VISA_ROOT = os.environ["VISA_ROOT"]
 VISA_MASKS_ROOT = os.environ.get("VISA_MASKS_ROOT")
-# The official VisA release ships split_csv/1cls.csv; folder-structured copies are read as "mvtec".
-VISA_BENCHMARK = os.environ.get("VISA_BENCHMARK", "visa")
+# The official VisA release ships a split manifest and is read with the "visa" preset. Copies that
+# arrive as one directory per category, with masks named after the image, need this layout instead.
+VISA_LAYOUT = FolderBenchmarkSpec(name="visa", mask_suffix="")
 OUTPUT_PATH = pathlib.Path(os.environ.get("UCAD_OUTPUT", "ucad_visa.json"))
 INPUT_SIZE = (224, 224)
 
@@ -31,10 +32,11 @@ INPUT_SIZE = (224, 224)
 def main():
     dataset = read_vision_benchmark_dataset(
         root=VISA_ROOT,
-        benchmark=VISA_BENCHMARK,
+        benchmark=VISA_LAYOUT,
         dataset_name="VisA",
         data_mode="paths",
         resize_to=INPUT_SIZE,
+        resize_mode="short_side_crop",
     )
 
     config = UCADConfig(

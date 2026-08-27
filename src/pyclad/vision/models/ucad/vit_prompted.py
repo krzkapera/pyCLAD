@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 import timm
@@ -48,6 +50,7 @@ def _block_forward_with_prompt(
 class PromptedViT(nn.Module):
     def __init__(
         self,
+        prompt_generator: torch.Generator,
         model_name: str = "vit_base_patch16_224",
         pretrained: bool = True,
         feature_layer: int = 5,
@@ -75,6 +78,7 @@ class PromptedViT(nn.Module):
             prompt_length=prompt_length,
             num_heads=self.num_heads,
             embed_dim=self.embed_dim,
+            generator=prompt_generator,
         )
 
         for i, block in enumerate(self.vit.blocks):

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -5,7 +7,12 @@ from scipy.ndimage import gaussian_filter
 
 
 class NearestNeighborScorer:
-    def __init__(self, num_nn: int = 1, reweighting_num_nn: int = 0, blur_sigma: float = 3.0):
+    def __init__(
+        self,
+        num_nn: int = 1,
+        reweighting_num_nn: int = 0,
+        blur_sigma: float = 3.0,
+    ):
         self.num_nn = num_nn
         self.reweighting_num_nn = reweighting_num_nn
         self.blur_sigma = blur_sigma
@@ -59,3 +66,4 @@ class NearestNeighborScorer:
             anomaly_maps[i] = gaussian_filter(anomaly_maps[i], sigma=self.blur_sigma)
 
         return anomaly_maps
+

@@ -33,6 +33,7 @@ def main():
         dataset_name="MVTec-AD",
         data_mode="paths",
         resize_to=INPUT_SIZE,
+        resize_mode="short_side_crop",
     )
 
     config = UCADConfig(
