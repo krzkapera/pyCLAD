@@ -154,8 +154,8 @@ one quantity the loss never sees.
 L2-normalising the features on the way into the bank and the query removes the mismatch, and measured
 in a fork of the authors' code it is worth +0.015 to +0.030 image AUROC on its own - more than the
 training. It does not make the loss useful, though: with the geometries aligned a single trained model
-still scores below its own untrained control, 0.7846 against 0.8118 on VisA over disjoint seed ranges.
-Training halves its own damage rather than reversing it. This implementation does not normalise, to
+still scores below its own untrained control on VisA, 0.7807 against 0.8075 over seven seeds, and ties
+it on MVTec. Training halves its own damage rather than reversing it. This implementation does not normalise, to
 stay faithful to the published method; if you want the gain, normalise the output of
 `patchcore_aggregate` before it reaches `greedy_coreset_sampling` and `NearestNeighborScorer`, and
 leave `training_epochs=0`.
