@@ -151,13 +151,14 @@ distance on the unnormalised vectors. Measured on the features that reach the ba
 standard deviation 1.5 to 1.8 times their mean, so the distance the score reads is dominated by the
 one quantity the loss never sees.
 
-L2-normalising the features on the way into the bank and the query removes the mismatch. Measured in a
-fork of the authors' code, it is worth +0.015 to +0.030 image AUROC on its own - more than the
-training - and it is the only change that makes the loss pay: on VisA the trained model then beats its
-own untrained control by +0.009 image and +0.025 pixel over three disjoint seed ranges, where without
-it the loss is neutral to slightly harmful. This implementation does not do it, to stay faithful to
-the published method; if you want it, normalise the output of `patchcore_aggregate` before it reaches
-`greedy_coreset_sampling` and `NearestNeighborScorer`.
+L2-normalising the features on the way into the bank and the query removes the mismatch, and measured
+in a fork of the authors' code it is worth +0.015 to +0.030 image AUROC on its own - more than the
+training. It does not make the loss useful, though: with the geometries aligned a single trained model
+still scores below its own untrained control, 0.7846 against 0.8118 on VisA over disjoint seed ranges.
+Training halves its own damage rather than reversing it. This implementation does not normalise, to
+stay faithful to the published method; if you want the gain, normalise the output of
+`patchcore_aggregate` before it reaches `greedy_coreset_sampling` and `NearestNeighborScorer`, and
+leave `training_epochs=0`.
 
 **Small defects are limited by the patch grid, not by the training.** ViT-B/16 at 224 gives 14x14
 patches, one patch covering 73x73 pixels of a 1024x1024 original, while MVTec's screw has defects a
@@ -172,7 +173,8 @@ The evidence behind the two statements above - that the loss contributes nothing
 published numbers need an undescribed reporting protocol - is not in this repository. It is in a fork
 of the authors' code, where each claim can be checked against the code that produced it:
 
-- `scripts/FINDINGS.md` - what the contrastive loss is worth, and the one change that makes it pay
+- `scripts/FINDINGS.md` - what the contrastive loss is worth, the design defect behind it, and why
+  repairing that defect still does not rescue it
 - `scripts/REPRODUCTION.md` - reproducing the published tables, and what it takes
 - `scripts/EVALUATION.md` - the reporting protocol taken apart, honest replacements, and what the
   published Forgetting Measure actually is
