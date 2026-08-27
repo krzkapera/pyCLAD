@@ -172,9 +172,10 @@ The evidence behind the two statements above - that the loss contributes nothing
 published numbers need an undescribed reporting protocol - is not in this repository. It is in a fork
 of the authors' code, where each claim can be checked against the code that produced it:
 
-- `scripts/FINDINGS.md` - how we know the contrastive loss contributes nothing
+- `scripts/FINDINGS.md` - what the contrastive loss is worth, and the one change that makes it pay
 - `scripts/REPRODUCTION.md` - reproducing the published tables, and what it takes
-- `scripts/EVALUATION.md` - the reporting protocol taken apart, and honest replacements
+- `scripts/EVALUATION.md` - the reporting protocol taken apart, honest replacements, and what the
+  published Forgetting Measure actually is
 - `scripts/MEASUREMENTS.md` - backbone checkpoints, feature grid, bank size, and open questions
 
 https://github.com/krzkapera/ucad/tree/claude/experiment-scripts/scripts
