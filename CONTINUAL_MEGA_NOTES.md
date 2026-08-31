@@ -59,10 +59,20 @@ Dla 30 klas wspólnych dla base scenariusza 1 i 2 **żadna** nie ma tego samego 
 treningowych. W obrębie jednego scenariusza train i test są rozłączne, ale obraz treningowy z S1 bywa
 obrazem testowym w S2. Wniosek: ContinualAD nie ma kanonicznego splitu — patrz §4.1.
 
-### 1.7 Rozbieżność w liczbie próbek względem Tab. A
+### 1.7 Tabela A nie sumuje się do własnych wartości zbiorczych
 
-Tabela A podaje 15 827 obrazów anomalnych w ContinualAD; suma po plikach meta to 15 826
-(normalnych 14 655 — zgodnie z tabelą).
+Liczby per klasa w Tab. A są dla **każdej** klasy o 10 niższe od rzeczywistych — zarówno dla obrazów
+normalnych, jak i anomalnych (Apple 490/502 w tabeli vs 500/512 w danych, Ruler 277/490 vs 287/500,
+Energy-bar 329/542 vs 339/552, i tak dla wszystkich 30 klas). Wygląda to na liczności *zbioru testowego*,
+czyli po odjęciu 10 normalnych i 10 anomalnych obrazów treningowych.
+
+Kolumny tabeli nie sumują się więc do wartości podanych w jej własnym tekście: 14 355 vs deklarowane
+14 655 obrazów normalnych (różnica to dokładnie 30 klas × 10). Rzeczywiste sumy z plików meta to
+14 655 normalnych i 15 826 anomalnych — pierwsza zgadza się z deklaracją, druga jest o 1 mniejsza niż
+podane 15 827.
+
+Zweryfikowane na Heliosie: dla 10 pobranych klas zawartość dysku pokrywa się z plikami meta co do
+obrazu (0 ścieżek z meta nieobecnych na dysku, 0 obrazów na dysku nieujętych w meta).
 
 ### 1.8 Nieznormalizowane nazwy defektów i dwie konwencje nazw masek w ContinualAD
 
@@ -71,6 +81,10 @@ Katalogi anomalii zawierają warianty i literówki: `missing part`, `missing_par
 a katalog urządzenia bywa pominięty (ok. 3 000 z 59 000 obrazów anomalnych ma ścieżkę
 `anomaly/<defekt>/<plik>` zamiast `anomaly/<defekt>/<urządzenie>/<plik>`). Reader obsługuje oba warianty;
 nazw defektów nie normalizujemy — `defect_type` przechowuje nazwę katalogu bez zmian.
+
+W archiwach na HuggingFace w katalogach anomalii siedzą też pliki `.DS_Store` (np.
+`Candy/anomaly/crack/.DS_Store`). Reader filtruje po rozszerzeniu, więc ich nie widzi, ale skanowanie
+katalogu „wszystko co jest plikiem" zliczyłoby je jako obrazy.
 
 ---
 
