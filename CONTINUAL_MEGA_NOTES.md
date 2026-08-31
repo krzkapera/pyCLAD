@@ -217,3 +217,63 @@ używa `nanmean`, żeby pojedyncza zdegenerowana klasa nie wyzerowała całej gr
 `ContinualMegaDataset` czyta pliki meta wprost. Konwersja do manifestu pyCLAD (`*_samples.csv`) miałaby
 sens dopiero przy hostowaniu specyfikacji obok danych — odłożone razem z tematem pobierania dużych
 plików.
+
+---
+
+## 5. Pomiary na Heliosie (Cyfronet)
+
+Środowisko: partycja `plgrid-gpu-gh200`, NVIDIA GH200 120GB (aarch64), Python 3.11.5,
+torch 2.11.0+cu128. Wszystkie dane, cache i wyniki w `$SCRATCH/continual-mega/`.
+
+Uwaga techniczna: węzły logowania są x86_64, a węzły GPU aarch64, więc venv zbudowany na loginie tam
+nie działa. Zadania wymagają `--export=NONE`, inaczej `MODULEPATH` odziedziczony z loginu każe
+`module load Python` wybrać build x86_64.
+
+### 5.1 Smoke test
+
+Syntetyczny zbiór odwzorowujący layout ContinualAD (obie konwencje nazw masek, obie głębokości
+katalogów) plus pliki meta dla scenariuszy 1–3 i zbiory zero-shot. 18 asercji, wszystkie przechodzą:
+odkrywanie klas, rozmiary splitu few-shot, rozwiązywanie masek, determinizm splitu, etykiety i maski
+na koncepcie treningowym, dyspozycja do `fit_supervised` vs `fit`, kolejność grup, wydzielenie grup
+zero-shot oraz zgodność `AverageAccuracy` i `ForgettingMeasureStrict` z wartościami policzonymi ręcznie
+z macierzy grupowej.
+
+### 5.2 Przebieg na realnych danych
+
+10 klas ContinualAD (18 GB) jako strumień 10 konceptów, FastFlow z backbonem resnet18, obrazy 256×256,
+200 obrazów normalnych na klasę do treningu, 10 epok, strategia `NaiveStrategy`.
+
+Image ROC-AUC — przekątna (wynik zaraz po nauczeniu klasy) kontra ostatni wiersz (po nauczeniu
+wszystkich dziesięciu):
+
+| klasa | po nauczeniu | na końcu |
+|---|---|---|
+| Apple | 0.771 | 0.263 |
+| Candy | 0.885 | 0.608 |
+| Capsule | 0.949 | 0.553 |
+| Cup | 0.576 | 0.286 |
+| Energy-bar | 0.819 | 0.355 |
+| Eraser | 0.939 | 0.237 |
+| Flash-drive | 0.937 | 0.305 |
+| Food-container | 0.812 | 0.608 |
+| Mouse | 0.762 | 0.614 |
+| Ruler | 0.860 | 0.860 |
+
+Podsumowanie: ACC 0.469, FM 0.402, BWT −0.080, FWT 0.346 dla image ROC-AUC; ACC 0.679 i FM 0.122 dla
+pixel ROC-AUC; ACC 0.028 dla pixel AP. Czyli model uczy się każdej klasy poprawnie (przekątna 0.58–0.95),
+ale bez żadnego mechanizmu przeciwdziałania zapominaniu wyniki na wcześniejszych klasach spadają poniżej
+losowego — dokładnie to, co strategia `Naive` ma pokazywać.
+
+### 5.3 Walidacja krzyżowa callbacku grupowego
+
+`GroupedConceptMetricCallback` z mapowaniem identycznościowym (klasa → własna grupa) daje wartości
+identyczne z klasycznym `ConceptMetricCallback`: maksymalna różnica bezwzględna wynosi dokładnie 0.0.
+
+### 5.4 Gdzie idzie czas
+
+Trening zajął 45 s, ewaluacja 3 027 s — 98,5% czasu przebiegu. Materializacja zbioru (dekodowanie
+i skalowanie ~10 tys. JPEG-ów) zajęła dodatkowe 912 s i odbywa się zachłannie, bo samodzielny
+`ContinualADBenchmarkReader` idzie przez `read_dataset`, a nie przez `LazyVisionConceptList`.
+
+Potwierdza to założenie z §3.1 i §3.2: kosztem benchmarku jest ewaluacja, nie trening, więc granulacja
+i sposób trzymania danych testowych w pamięci są ważniejsze niż cokolwiek po stronie treningu.
