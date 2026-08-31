@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 import numpy as np
 
+from pyclad.data.concept import Concept
 from pyclad.output.output_writer import InfoProvider
 from pyclad.output.prediction_results import PredictionResults
 
@@ -40,6 +41,14 @@ class ConceptIncrementalStrategy(Strategy):
 class ConceptAgnosticStrategy(Strategy):
     @abc.abstractmethod
     def learn(self, data: np.ndarray) -> None: ...
+
+    @abc.abstractmethod
+    def predict(self, data: np.ndarray) -> PredictionResults: ...
+
+
+class SupervisedStrategy(Strategy):
+    @abc.abstractmethod
+    def learn_concept(self, concept: Concept) -> None: ...
 
     @abc.abstractmethod
     def predict(self, data: np.ndarray) -> PredictionResults: ...

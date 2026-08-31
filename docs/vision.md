@@ -142,3 +142,114 @@ callbacks = [
     # ... PixelAveragePrecision, PixelF1Score, PixelIoU, PixelDiceScore
 ]
 ```
+---
+
+# Continual-MEGA
+
+`Continual-MEGA` is a large-scale continual anomaly-detection benchmark built from seven datasets:
+ContinualAD, MVTec-AD, VisA, Real-IAD, VIADUCT, BTAD and MPDD.
+
+## Data layout
+
+Point `data_root` at a directory holding all seven datasets under the names used by the benchmark
+metadata, and `meta_dir` at the `meta_files/` directory of the
+[reference repository](https://github.com/Continual-Mega/Continual-MEGA-Baseline):
+
+```
+continual_mega/
+├── continual_ad/
+├── mvtec_anomaly_detection/
+├── VisA_20220922/
+├── VIADUCT/
+├── Real-IAD-512/
+├── MPDD/
+├── BTAD/
+└── meta_files/
+    ├── scenario1_base.json
+    ├── scenario1_5classes_tasks.json
+    ├── ...
+    └── meta_mvtec.json
+```
+
+ContinualAD is published on
+[HuggingFace](https://huggingface.co/datasets/Continual-Mega/Continual-MEGA-Benchmark); the remaining six
+datasets have to be downloaded from their own sources.
+
+## Scenarios
+
+| Scenario | Base classes | New classes | Zero-shot |
+|---|---|---|---|
+| 1 | 85 (all datasets) | 60, split into 12 / 6 / 2 tasks | – |
+| 2 | 58 (no MVTec-AD, no VisA) | 60, split into 12 / 6 / 2 tasks | MVTec-AD, VisA |
+| 3 | 58 (no MVTec-AD, no VisA, no ContinualAD) | 30, split into 6 / 3 / 1 tasks | MVTec-AD, VisA |
+
+```python
+from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaDataset
+
+dataset = ContinualMegaDataset(
+    data_root="resources/vision/continual_mega",
+    meta_dir="resources/vision/continual_mega/meta_files",
+    scenario=2,
+    task_size=30,
+    zero_shot=True,
+    train_samples="all",
+)
+```
+
+Training concepts are the task groups (`base`, `task_1`, …); test concepts are individual classes. The
+class → group mapping is available through `dataset.group_by_concept()`.
+
+## Metrics
+
+The benchmark reports image-level ROC-AUC and pixel-level AP, averaged over the classes of each group.
+Use the grouped callbacks together with `AverageAccuracy` (ACC — mean of the last row of the group
+matrix) and `ForgettingMeasureStrict` (FM — drop from the best previously observed score, excluding the
+task learned last):
+
+```python
+groups = dataset.group_by_concept()
+summarized_metrics = [AverageAccuracy(), ForgettingMeasureStrict()]
+
+callbacks = [
+    GroupedConceptMetricCallback(RocAuc(), groups, summarized_metrics),
+    GroupedVisionPixelConceptMetricCallback(PixelAveragePrecision(), groups, summarized_metrics),
+]
+```
+
+Held-out zero-shot groups appear under `held_out_groups` in the callback output and are excluded from
+ACC and FM. Plain `ConceptMetricCallback` and `VisionPixelConceptMetricCallback` cannot be used here —
+they assume one test concept per training concept.
+
+## Training modes
+
+`train_samples="all"` reproduces the benchmark: 10 normal and 10 anomalous images per class, with pixel
+masks. It needs a model implementing `SupervisedVisionModel`, driven by `NaiveSupervisedStrategy`:
+
+```python
+from pyclad.vision.strategies.naive_supervised import NaiveSupervisedStrategy
+
+strategy = NaiveSupervisedStrategy(model)
+```
+
+`train_samples="normal"` drops the anomalous training images so that one-class models such as PaSTe and
+FastFlow can be evaluated on the same streams with the usual strategies.
+
+## ContinualAD alone
+
+ContinualAD also works as a standalone 30-class dataset. Since it has no canonical split, the reader
+draws a seeded few-shot training set per class (10 normal + 10 anomalous by default) and puts the rest
+into the test split:
+
+```python
+dataset = read_vision_dataset(
+    root="resources/vision/continual_ad",
+    benchmark="continual_ad",
+    resize_to=(336, 336),
+    interpolation="bicubic",
+    apply_exif_transpose=True,
+    supervised_train=True,
+)
+```
+
+`apply_exif_transpose=True` is required — ContinualAD images come from phone cameras and their masks are
+stored in the transposed orientation.

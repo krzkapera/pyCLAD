@@ -13,6 +13,7 @@ from pyclad.vision.data.base import (
     list_image_files,
     select_categories,
 )
+from pyclad.vision.data.benchmarks.continual_ad import ContinualADBenchmarkReader
 
 
 @dataclass(frozen=True)
@@ -411,6 +412,7 @@ class DAGMBenchmarkReader(VisionBenchmarkReader):
 
 PREDEFINED_BENCHMARK_READERS: Dict[str, Callable[..., VisionBenchmarkReader]] = {
     "btech": BTechBenchmarkReader,
+    "continual_ad": ContinualADBenchmarkReader,
     "dagm": DAGMBenchmarkReader,
     "mpdd": MPDDBenchmarkReader,
     "mvtec": MVTecBenchmarkReader,
@@ -455,6 +457,9 @@ def read_vision_benchmark_dataset(
     data_mode: str = "numpy",
     resize_to: Optional[Tuple[int, int]] = None,
     color_mode: str = "rgb",
+    interpolation: str = "bilinear",
+    apply_exif_transpose: bool = False,
+    supervised_train: bool = False,
     max_train_samples_per_category: Optional[int] = None,
     max_test_samples_per_category: Optional[int] = None,
 ) -> ConceptsDataset:
@@ -465,6 +470,9 @@ def read_vision_benchmark_dataset(
         data_mode=data_mode,
         resize_to=resize_to,
         color_mode=color_mode,
+        interpolation=interpolation,
+        apply_exif_transpose=apply_exif_transpose,
+        supervised_train=supervised_train,
         max_train_samples_per_category=max_train_samples_per_category,
         max_test_samples_per_category=max_test_samples_per_category,
     )

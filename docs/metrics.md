@@ -31,6 +31,18 @@ $\text{FWT} = \frac{\sum_{i<j}^{N} R_{i, j}}{\frac{N(N-1)}{2}}$
 
 [^3]: It can also be thought of as the zero-shot model performance on future concepts since it assesses model performance on unseen concepts. It partially depends on concept similarity (task similarity) and the model's knowledge transfer ability.
 
+Two additional metrics follow the protocol used by the [Continual-MEGA](vision.md#continual-mega) benchmark, which summarizes the final state of the model rather than the whole training history:
+
+- **Average Accuracy** (ACC): the mean of the last row of $R$, i.e. the performance on every concept after the last one has been learned.
+
+$\text{ACC} = \frac{\sum_{j=1}^{N} R_{N, j}}{N}$
+
+- **Forgetting Measure** (FM): the drop from the best previously observed performance, excluding the concept learned last.
+
+$\text{FM} = \frac{\sum_{j=1}^{N-1} \max_{i<N} R_{i, j} - R_{N, j}}{N-1}$
+
+`ForgettingMeasure` (a `StepwiseConceptMetric` reporting forgetting after each concept) and `ForgettingMeasureStrict` (a single value following the formula above) differ in that the latter drops the column of the last learned concept.
+
 
 
 
