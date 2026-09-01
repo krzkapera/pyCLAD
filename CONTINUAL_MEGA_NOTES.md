@@ -259,21 +259,39 @@ wszystkich dziesięciu):
 | Mouse | 0.762 | 0.614 |
 | Ruler | 0.860 | 0.860 |
 
-Podsumowanie: ACC 0.469, FM 0.402, BWT −0.080, FWT 0.346 dla image ROC-AUC; ACC 0.679 i FM 0.122 dla
-pixel ROC-AUC; ACC 0.028 dla pixel AP. Czyli model uczy się każdej klasy poprawnie (przekątna 0.58–0.95),
-ale bez żadnego mechanizmu przeciwdziałania zapominaniu wyniki na wcześniejszych klasach spadają poniżej
-losowego — dokładnie to, co strategia `Naive` ma pokazywać.
+Czyli model uczy się każdej klasy poprawnie (przekątna 0.58–0.95), ale bez żadnego mechanizmu
+przeciwdziałania zapominaniu wyniki na wcześniejszych klasach spadają poniżej losowego — dokładnie to,
+co strategia `Naive` ma pokazywać.
+
+Ten sam strumień ze strategią `CumulativeStrategy` (retrening na wszystkich danych widzianych do tej
+pory) dla porównania:
+
+| metryka | Naive | Cumulative |
+|---|---|---|
+| image ROC-AUC — ACC | 0.469 | **0.555** |
+| image ROC-AUC — FM | 0.402 | **0.194** |
+| image ROC-AUC — BWT | −0.080 | **−0.030** |
+| image ROC-AUC — ContinualAverage | 0.523 | **0.649** |
+| pixel ROC-AUC — ACC | 0.679 | **0.743** |
+| pixel ROC-AUC — FM | 0.122 | **0.061** |
+| pixel AP — ACC | 0.028 | 0.028 |
+
+Cumulative zmniejsza zapominanie o połowę i podnosi ACC, czyli uporządkowanie strategii wychodzi
+zgodnie z oczekiwaniem. Pixel AP pozostaje bardzo niskie w obu przypadkach — to zgadza się z główną
+obserwacją paperu, że lokalizacja pikselowa jest najsłabszym punktem metod na tym benchmarku.
 
 ### 5.3 Walidacja krzyżowa callbacku grupowego
 
 `GroupedConceptMetricCallback` z mapowaniem identycznościowym (klasa → własna grupa) daje wartości
-identyczne z klasycznym `ConceptMetricCallback`: maksymalna różnica bezwzględna wynosi dokładnie 0.0.
+identyczne z klasycznym `ConceptMetricCallback`: maksymalna różnica bezwzględna wynosi dokładnie 0.0
+w obu przebiegach.
 
 ### 5.4 Gdzie idzie czas
 
-Trening zajął 45 s, ewaluacja 3 027 s — 98,5% czasu przebiegu. Materializacja zbioru (dekodowanie
-i skalowanie ~10 tys. JPEG-ów) zajęła dodatkowe 912 s i odbywa się zachłannie, bo samodzielny
-`ContinualADBenchmarkReader` idzie przez `read_dataset`, a nie przez `LazyVisionConceptList`.
+Trening zajął 45 s (Naive) i 222 s (Cumulative), ewaluacja odpowiednio 3 027 s i 3 052 s — czyli 93–99%
+czasu przebiegu. Materializacja zbioru (dekodowanie i skalowanie ~10 tys. JPEG-ów) zajęła dodatkowe
+912 s i odbywa się zachłannie, bo samodzielny `ContinualADBenchmarkReader` idzie przez `read_dataset`,
+a nie przez `LazyVisionConceptList`.
 
 Potwierdza to założenie z §3.1 i §3.2: kosztem benchmarku jest ewaluacja, nie trening, więc granulacja
 i sposób trzymania danych testowych w pamięci są ważniejsze niż cokolwiek po stronie treningu.
