@@ -113,12 +113,15 @@ grupową, uśredniając w grupie.
 To jednocześnie rozwiązuje problem pamięci: mediana klasy testowej ma 250 obrazów, największa
 (`real_iad_mint`) 5 285, więc szczyt to ~2,4 GB map anomalii zamiast ~52 GB dla całej grupy base.
 
-Grupowanie jest jedyną rzeczą, którą dokłada `GroupedConceptMetricCallback`: dziedziczy po
-`ConceptMetricCallback` i nadpisuje jedną metodę — do której kolumny macierzy trafia dany koncept.
-Wariant pikselowy to złożenie tego grupowania z `VisionPixelConceptMetricCallback` przez MRO, z pustym
-ciałem klasy. Przy okazji `VisionPixelConceptMetricCallback` przestał być kopią
-`ConceptMetricCallback` i też po nim dziedziczy, nadpisując wyłącznie odczyt wartości — to usunęło
-duplikację, która była w projekcie wcześniej.
+`GroupedConceptMetricCallback` i jego wariant pikselowy są osobnymi klasami, niezależnymi od
+`ConceptMetricCallback` i `VisionPixelConceptMetricCallback`: budują macierz **grup**, nie konceptów,
+więc jeden koncept treningowy może obejmować wiele testowych. Wariant pikselowy dziedziczy po obrazowym
+i nadpisuje wyłącznie odczyt wartości.
+
+Rozważaliśmy wpięcie grupowania w istniejące klasy (haki na wartość i na kolumnę w
+`ConceptMetricCallback`, wariant pikselowy przez MRO). Wychodziło o ~120 linii mniej i usuwało
+duplikację, która jest w projekcie od wcześniej, ale wymagało przebudowy dwóch klas publicznych.
+Wybraliśmy izolację kosztem powtórzenia: klasy z `main` zostają nietknięte.
 
 ### 3.2 Leniwe budowanie konceptów
 
@@ -150,9 +153,18 @@ Zamiast tego dokładamy do `Strategy` jedną metodę polimorficzną — `learn_c
 domyślne implementacje w `ConceptIncrementalStrategy`, `ConceptAwareStrategy` i
 `ConceptAgnosticStrategy` przekazują sterowanie do istniejącego `learn()`. Scenariusze wołają wyłącznie
 `learn_concept`, więc nie ma w nich żadnego testu typu, a istniejące strategie działają bez zmian.
-`NaiveSupervisedStrategy` nadpisuje `learn_concept` i woła
-`SupervisedVisionModel.fit_supervised(data, labels, masks)`; jej `learn()` rzuca
-`SupervisionRequiredError`, bo trening bez etykiet nie ma dla niej sensu.
+Po stronie modeli `SupervisedModel` (rdzeń) deklaruje `fit(data, labels)` i jest **rodzeństwem**
+`Model`, nie jego podtypem — `fit(data)` i `fit(data, labels)` to różne kontrakty, a model nadzorowany
+nie może wystąpić tam, gdzie oczekiwany jest nienadzorowany. Kosztem jest powtórzenie deklaracji
+`predict`/`name`/`info`; alternatywą byłoby wydzielenie wspólnej bazy bez `fit`, czyli zmiana
+istniejącego `Model`.
+
+Maski są sygnałem pikselowym, więc nie ma ich w rdzeniu. `SupervisedVisionModel` dokłada je w warstwie
+vision jako `fit(data, labels, masks=None)` i **jest** podtypem `SupervisedModel`, bo parametr
+opcjonalny nie zawęża kontraktu.
+
+`NaiveSupervisedStrategy` nadpisuje `learn_concept` i woła `fit(data, labels, masks)`; jej `learn()`
+rzuca `SupervisionRequiredError`, bo trening bez etykiet nie ma dla niej sensu.
 
 Strategia dostaje `Concept`, bo tylko ona wie, czy koncept niesie maski; model dostaje tablice.
 

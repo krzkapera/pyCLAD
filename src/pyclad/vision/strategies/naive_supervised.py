@@ -21,7 +21,7 @@ class NaiveSupervisedStrategy(ConceptIncrementalStrategy):
         if concept.labels is None:
             raise SupervisionRequiredError(f"{self.name()} requires labels, concept '{concept.name}' has none")
         masks = concept.masks if isinstance(concept, VisionConcept) else None
-        self._model.fit_supervised(data=concept.data, labels=concept.labels, masks=masks)
+        self._model.fit(data=concept.data, labels=concept.labels, masks=masks)
 
     def predict(self, data: np.ndarray) -> VisionPredictionResults:
         return self._model.predict(data)

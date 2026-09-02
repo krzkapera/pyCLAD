@@ -225,23 +225,28 @@ callbacks = [
 Held-out zero-shot groups appear under `held_out_columns` in the callback output and are excluded from
 ACC and FM.
 
-Grouping is the only thing these two callbacks add. `GroupedConceptMetricCallback` derives from
-`ConceptMetricCallback` and overrides one method — which column a concept contributes to — so several
-test concepts fold into one matrix cell. The pixel variant is that grouping composed with
-`VisionPixelConceptMetricCallback`, which itself derives from the same base and only overrides how the
-value is read. Use the plain callbacks whenever every training concept has exactly one matching test
-concept.
+These two are separate from `ConceptMetricCallback` and `VisionPixelConceptMetricCallback`: they build a
+group matrix rather than a concept matrix, so a training concept may cover several test concepts. The
+pixel variant derives from the image one and overrides only how the value is read. Use the plain
+callbacks whenever every training concept has exactly one matching test concept.
 
 ## Training modes
 
 `train_samples="all"` reproduces the benchmark: 10 normal and 10 anomalous images per class, with pixel
-masks. It needs a model implementing `SupervisedVisionModel`, driven by `NaiveSupervisedStrategy`:
+masks. That needs a model that trains on supervision rather than on normal data alone:
 
 ```python
+from pyclad.models.supervised_model import SupervisedModel          # fit(data, labels)
+from pyclad.vision.models.supervised_vision_model import SupervisedVisionModel  # fit(data, labels, masks=None)
 from pyclad.vision.strategies.naive_supervised import NaiveSupervisedStrategy
 
 strategy = NaiveSupervisedStrategy(model)
 ```
+
+`SupervisedModel` is a sibling of `Model`, not a subtype: `Model.fit(data)` and
+`SupervisedModel.fit(data, labels)` are different contracts, and a supervised model cannot stand in
+where an unsupervised one is expected. `SupervisedVisionModel` *is* a subtype of `SupervisedModel` —
+`masks` is optional, so it still satisfies `fit(data, labels)`.
 
 `train_samples="normal"` drops the anomalous training images so that one-class models such as PaSTe and
 FastFlow can be evaluated on the same streams with the usual strategies.

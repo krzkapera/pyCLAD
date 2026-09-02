@@ -3,9 +3,13 @@ from typing import Optional
 
 import numpy as np
 
-from pyclad.vision.models.vision_model import VisionModel
+from pyclad.models.supervised_model import SupervisedModel
+from pyclad.vision.prediction_results import VisionPredictionResults
 
 
-class SupervisedVisionModel(VisionModel):
+class SupervisedVisionModel(SupervisedModel):
     @abstractmethod
-    def fit_supervised(self, data: np.ndarray, labels: np.ndarray, masks: Optional[np.ndarray] = None) -> None: ...
+    def fit(self, data: np.ndarray, labels: np.ndarray, masks: Optional[np.ndarray] = None) -> None: ...
+
+    @abstractmethod
+    def predict(self, data: np.ndarray) -> VisionPredictionResults: ...
