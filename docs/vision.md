@@ -184,9 +184,9 @@ datasets have to be downloaded from their own sources.
 | 3 | 58 (no MVTec-AD, no VisA, no ContinualAD) | 30, split into 6 / 3 / 1 tasks | MVTec-AD, VisA |
 
 ```python
-from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaDataset
+from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaBenchmarkReader
 
-dataset = ContinualMegaDataset(
+reader = ContinualMegaBenchmarkReader(
     data_root="resources/vision/continual_mega",
     meta_dir="resources/vision/continual_mega/meta_files",
     scenario=2,
@@ -194,7 +194,13 @@ dataset = ContinualMegaDataset(
     zero_shot=True,
     train_samples="all",
 )
+dataset = reader.read_dataset()
 ```
+
+`ContinualMegaBenchmarkReader` holds the protocol — which scenario, how large a task, whether MVTec-AD
+and VisA are held out — and `read_dataset()` turns it into a `ContinualMegaDataset`, the stream a
+scenario consumes. `index_groups()` returns the same split as plain metadata, without touching a single
+image.
 
 Training concepts are the task groups (`base`, `task_1`, …); test concepts are individual classes. The
 class → group mapping is available through `dataset.group_by_concept()`.
@@ -239,23 +245,3 @@ strategy = NaiveSupervisedStrategy(model)
 
 `train_samples="normal"` drops the anomalous training images so that one-class models such as PaSTe and
 FastFlow can be evaluated on the same streams with the usual strategies.
-
-## ContinualAD alone
-
-ContinualAD also works as a standalone 30-class dataset. Since it has no canonical split, the reader
-draws a seeded few-shot training set per class (10 normal + 10 anomalous by default) and puts the rest
-into the test split:
-
-```python
-dataset = read_vision_dataset(
-    root="resources/vision/continual_ad",
-    benchmark="continual_ad",
-    resize_to=(336, 336),
-    interpolation="bicubic",
-    apply_exif_transpose=True,
-    supervised_train=True,
-)
-```
-
-`apply_exif_transpose=True` is required — ContinualAD images come from phone cameras and their masks are
-stored in the transposed orientation.

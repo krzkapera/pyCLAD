@@ -74,17 +74,17 @@ podane 15 827.
 Zweryfikowane na Heliosie: dla 10 pobranych klas zawartość dysku pokrywa się z plikami meta co do
 obrazu (0 ścieżek z meta nieobecnych na dysku, 0 obrazów na dysku nieujętych w meta).
 
-### 1.8 Nieznormalizowane nazwy defektów i dwie konwencje nazw masek w ContinualAD
+### 1.8 Layout ContinualAD jest niejednorodny
 
-Katalogi anomalii zawierają warianty i literówki: `missing part`, `missing_part`, `misisng part`,
-`crack`, `crack1`, `crack2`. Maski występują w dwóch konwencjach — `<stem>.png` oraz `mask_<stem>.png` —
-a katalog urządzenia bywa pominięty (ok. 3 000 z 59 000 obrazów anomalnych ma ścieżkę
-`anomaly/<defekt>/<plik>` zamiast `anomaly/<defekt>/<urządzenie>/<plik>`). Reader obsługuje oba warianty;
-nazw defektów nie normalizujemy — `defect_type` przechowuje nazwę katalogu bez zmian.
+Katalogi anomalii zawierają warianty i literówki nazw defektów: `missing part`, `missing_part`,
+`misisng part`, `crack`, `crack1`, `crack2`. Maski występują w dwóch konwencjach — `<stem>.png` oraz
+`mask_<stem>.png` — a katalog urządzenia bywa pominięty (ok. 3 000 z 59 000 obrazów anomalnych ma
+ścieżkę `anomaly/<defekt>/<plik>` zamiast `anomaly/<defekt>/<urządzenie>/<plik>`). W archiwach na
+HuggingFace w katalogach anomalii siedzą dodatkowo pliki `.DS_Store`.
 
-W archiwach na HuggingFace w katalogach anomalii siedzą też pliki `.DS_Store` (np.
-`Candy/anomaly/crack/.DS_Store`). Reader filtruje po rozszerzeniu, więc ich nie widzi, ale skanowanie
-katalogu „wszystko co jest plikiem" zliczyłoby je jako obrazy.
+Dla nas to bez znaczenia: ścieżki do obrazów i masek bierzemy wprost z plików meta, nie ze skanowania
+katalogów. Notujemy, bo każdy reader oparty na przechodzeniu drzewa katalogów musi te warianty
+obsłużyć.
 
 ---
 
@@ -151,8 +151,8 @@ domyślne implementacje w `ConceptIncrementalStrategy`, `ConceptAwareStrategy` i
 `ConceptAgnosticStrategy` przekazują sterowanie do istniejącego `learn()`. Scenariusze wołają wyłącznie
 `learn_concept`, więc nie ma w nich żadnego testu typu, a istniejące strategie działają bez zmian.
 `NaiveSupervisedStrategy` nadpisuje `learn_concept` i woła
-`SupervisedVisionModel.fit_supervised(data, labels, masks)`; jej `learn()` jawnie rzuca
-`NotImplementedError`, bo trening bez etykiet nie ma dla niej sensu.
+`SupervisedVisionModel.fit_supervised(data, labels, masks)`; jej `learn()` rzuca
+`SupervisionRequiredError`, bo trening bez etykiet nie ma dla niej sensu.
 
 Strategia dostaje `Concept`, bo tylko ona wie, czy koncept niesie maski; model dostaje tablice.
 
@@ -185,12 +185,18 @@ ze strumienia.
 
 ## 4. Decyzje projektowe
 
-### 4.1 Split ContinualAD jako samodzielnego zbioru
+### 4.1 Zakres: tylko benchmark, bez samodzielnego ContinualAD
 
-ContinualAD nie ma kanonicznego splitu (§1.6). Domyślny w `ContinualADBenchmarkReader` odwzorowuje
-benchmark: 10 normalnych + 10 anomalnych na klasę do treningu, reszta do testu. Wybór jest
-deterministyczny — ziarno to `seed + crc32("<klasa>/<normal|anomaly>")` — więc nie zależy od kolejności
-ani podzbioru klas. `train_anomaly_per_category=0` daje wariant normal-only.
+ContinualAD jest udostępniany jako osobny zbiór, ale nie ma kanonicznego splitu train/test (§1.6), więc
+użycie go poza benchmarkiem wymagałoby wymyślenia własnego podziału. Zrezygnowaliśmy z tego: jedynym
+wejściem jest `ContinualMegaBenchmarkReader`, który bierze ścieżki z plików meta. Zbudowany wcześniej
+`ContinualADBenchmarkReader` (split few-shot 10+10 seedowany po `crc32`) został usunięty.
+
+Przy okazji: w `pyclad/vision/data/benchmarks/` słowo „benchmark" oznacza „znany publiczny zbiór o
+znanym layoucie na dysku" (`MVTecBenchmarkReader`, `VisABenchmarkReader`, …), a nie protokół ewaluacji.
+`ContinualMegaBenchmarkReader` jest jedyną klasą w tym module, która czyta benchmark w sensie paperu —
+protokół plus dane — i dlatego świadomie nie dziedziczy po `VisionBenchmarkReader`, którego kontrakt
+(`index_samples` z limitami per kategoria) opisuje czytanie zbioru danych, nie scenariusza.
 
 ### 4.2 EXIF
 

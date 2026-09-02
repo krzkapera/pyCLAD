@@ -74,7 +74,6 @@ class VisionBenchmarkReader(ABC):
         color_mode: str = "rgb",
         interpolation: str = "bilinear",
         apply_exif_transpose: bool = False,
-        supervised_train: bool = False,
         max_train_samples_per_category: Optional[int] = None,
         max_test_samples_per_category: Optional[int] = None,
     ) -> ConceptsDataset:
@@ -92,7 +91,6 @@ class VisionBenchmarkReader(ABC):
             color_mode=color_mode,
             interpolation=interpolation,
             apply_exif_transpose=apply_exif_transpose,
-            supervised_train=supervised_train,
         )
 
 
@@ -131,7 +129,6 @@ def build_concepts_dataset_from_samples(
     color_mode: str = "rgb",
     interpolation: str = "bilinear",
     apply_exif_transpose: bool = False,
-    supervised_train: bool = False,
 ) -> ConceptsDataset:
     options = ImageLoadOptions(
         data_mode=data_mode,
@@ -154,7 +151,7 @@ def build_concepts_dataset_from_samples(
                 name=category,
                 samples=buckets.get((category, "train"), []),
                 options=options,
-                with_labels=supervised_train,
+                with_labels=False,
             )
         )
         test_samples = buckets.get((category, "test"), [])

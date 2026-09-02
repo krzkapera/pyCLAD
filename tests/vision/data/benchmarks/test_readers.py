@@ -38,7 +38,6 @@ def test_read_vision_benchmark_dataset_supports_mvtec_preset(tmp_path: Path):
 
     assert available_vision_benchmarks() == [
         "btech",
-        "continual_ad",
         "dagm",
         "mpdd",
         "mvtec",

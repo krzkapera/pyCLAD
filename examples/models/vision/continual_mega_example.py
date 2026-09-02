@@ -14,7 +14,7 @@ from pyclad.strategies.baselines.naive import NaiveStrategy
 from pyclad.vision.callbacks.grouped_vision_pixel_concept_metric_callback import (
     GroupedVisionPixelConceptMetricCallback,
 )
-from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaDataset
+from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaBenchmarkReader
 from pyclad.vision.metrics.pixel_average_precision import PixelAveragePrecision
 from pyclad.vision.models.fastflow.config import FastFlowConfig
 from pyclad.vision.models.fastflow.fastflow import FastFlow
@@ -22,7 +22,7 @@ from pyclad.vision.models.fastflow.fastflow import FastFlow
 logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
-    dataset = ContinualMegaDataset(
+    reader = ContinualMegaBenchmarkReader(
         data_root=pathlib.Path("../../resources/vision/continual_mega"),
         meta_dir=pathlib.Path("../../resources/vision/continual_mega/meta_files"),
         scenario=2,
@@ -30,6 +30,7 @@ if __name__ == "__main__":
         zero_shot=True,
         train_samples="normal",
     )
+    dataset = reader.read_dataset()
 
     model = FastFlow(
         FastFlowConfig(

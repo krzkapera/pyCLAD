@@ -3,6 +3,7 @@ from typing import Dict
 import numpy as np
 
 from pyclad.data.concept import Concept
+from pyclad.strategies.exceptions import SupervisionRequiredError
 from pyclad.strategies.strategy import ConceptIncrementalStrategy
 from pyclad.vision.data.vision_concept import VisionConcept
 from pyclad.vision.models.supervised_vision_model import SupervisedVisionModel
@@ -14,11 +15,11 @@ class NaiveSupervisedStrategy(ConceptIncrementalStrategy):
         self._model = model
 
     def learn(self, data: np.ndarray) -> None:
-        raise NotImplementedError(f"{self.name()} trains on labelled concepts, use learn_concept()")
+        raise SupervisionRequiredError(f"{self.name()} learns from labelled concepts, not from raw data")
 
     def learn_concept(self, concept: Concept) -> None:
         if concept.labels is None:
-            raise ValueError(f"Supervised training requires labelled concepts, got none for '{concept.name}'")
+            raise SupervisionRequiredError(f"{self.name()} requires labels, concept '{concept.name}' has none")
         masks = concept.masks if isinstance(concept, VisionConcept) else None
         self._model.fit_supervised(data=concept.data, labels=concept.labels, masks=masks)
 
