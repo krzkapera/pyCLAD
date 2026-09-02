@@ -216,9 +216,15 @@ callbacks = [
 ]
 ```
 
-Held-out zero-shot groups appear under `held_out_groups` in the callback output and are excluded from
-ACC and FM. Plain `ConceptMetricCallback` and `VisionPixelConceptMetricCallback` cannot be used here —
-they assume one test concept per training concept.
+Held-out zero-shot groups appear under `held_out_columns` in the callback output and are excluded from
+ACC and FM.
+
+Grouping is the only thing these two callbacks add. `GroupedConceptMetricCallback` derives from
+`ConceptMetricCallback` and overrides one method — which column a concept contributes to — so several
+test concepts fold into one matrix cell. The pixel variant is that grouping composed with
+`VisionPixelConceptMetricCallback`, which itself derives from the same base and only overrides how the
+value is read. Use the plain callbacks whenever every training concept has exactly one matching test
+concept.
 
 ## Training modes
 

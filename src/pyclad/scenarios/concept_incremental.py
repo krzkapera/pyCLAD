@@ -1,22 +1,17 @@
 import logging
 from dataclasses import fields
-from typing import List, Union
+from typing import List
 
 from pyclad.callbacks.callback import Callback
 from pyclad.callbacks.composite_callback import CallbackComposite
 from pyclad.data.datasets.concepts_dataset import ConceptsDataset
-from pyclad.strategies.strategy import ConceptIncrementalStrategy, SupervisedStrategy
+from pyclad.strategies.strategy import ConceptIncrementalStrategy
 
 logger = logging.getLogger(__name__)
 
 
 class ConceptIncrementalScenario:
-    def __init__(
-        self,
-        dataset: ConceptsDataset,
-        strategy: Union[ConceptIncrementalStrategy, SupervisedStrategy],
-        callbacks: List[Callback],
-    ):
+    def __init__(self, dataset: ConceptsDataset, strategy: ConceptIncrementalStrategy, callbacks: List[Callback]):
         self._dataset = dataset
         self._strategy = strategy
         self._callbacks = callbacks
@@ -30,10 +25,7 @@ class ConceptIncrementalScenario:
             callback_composite.before_concept_processing(concept=train_concept)
             callback_composite.before_training()
 
-            if isinstance(self._strategy, SupervisedStrategy):
-                self._strategy.learn_concept(train_concept)
-            else:
-                self._strategy.learn(data=train_concept.data)
+            self._strategy.learn_concept(train_concept)
 
             callback_composite.after_training(learned_concept=train_concept)
 

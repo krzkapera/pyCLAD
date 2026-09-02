@@ -113,9 +113,12 @@ grupową, uśredniając w grupie.
 To jednocześnie rozwiązuje problem pamięci: mediana klasy testowej ma 250 obrazów, największa
 (`real_iad_mint`) 5 285, więc szczyt to ~2,4 GB map anomalii zamiast ~52 GB dla całej grupy base.
 
-**Konsekwencja:** w tej konfiguracji nie wolno użyć zwykłego `ConceptMetricCallback` ani
-`VisionPixelConceptMetricCallback` — obie budują macierz kwadratową indeksowaną nazwami nauczonych
-konceptów i przy 145 konceptach testowych vs 7 treningowych rzucą `KeyError`.
+Grupowanie jest jedyną rzeczą, którą dokłada `GroupedConceptMetricCallback`: dziedziczy po
+`ConceptMetricCallback` i nadpisuje jedną metodę — do której kolumny macierzy trafia dany koncept.
+Wariant pikselowy to złożenie tego grupowania z `VisionPixelConceptMetricCallback` przez MRO, z pustym
+ciałem klasy. Przy okazji `VisionPixelConceptMetricCallback` przestał być kopią
+`ConceptMetricCallback` i też po nim dziedziczy, nadpisując wyłącznie odczyt wartości — to usunęło
+duplikację, która była w projekcie wcześniej.
 
 ### 3.2 Leniwe budowanie konceptów
 
@@ -134,7 +137,7 @@ base to 60% zbioru testowego i tak jest liczona w każdym etapie. Za tę oszczę
 Górny trójkąt to wyniki zero-shot na klasach jeszcze nienauczonych, więc `ForwardTransfer` działa gratis.
 
 `AverageAccuracy` i `ForgettingMeasureStrict` liczone są wyłącznie na kwadratowej podmacierzy grup
-uczonych — grupy zero-shot trafiają do osobnej sekcji `held_out_groups`.
+uczonych — grupy zero-shot trafiają do osobnej sekcji `held_out_columns`.
 
 ### 3.4 Nadzorowany trening jako równoległy kontrakt
 
@@ -143,10 +146,15 @@ uczonych — grupy zero-shot trafiają do osobnej sekcji `held_out_groups`.
 wywróciłoby `der.learn`, `agem.learn`, `mste.learn` (brak `**kwargs`) oraz wszystkie 8 implementacji
 `fit`, w tym modele spoza repozytorium.
 
-Zamiast tego dokładamy równoległy kontrakt: `SupervisedStrategy.learn_concept(concept)` w rdzeniu
-i `SupervisedVisionModel.fit_supervised(data, labels, masks)` w warstwie vision, spięte przez
-`NaiveSupervisedStrategy`. Scenariusze rozgałęziają się po `isinstance`, więc istniejący kod działa bez
-zmian. Strategia dostaje `Concept`, bo tylko ona wie, czy koncept niesie maski; model dostaje tablice.
+Zamiast tego dokładamy do `Strategy` jedną metodę polimorficzną — `learn_concept(concept)` — której
+domyślne implementacje w `ConceptIncrementalStrategy`, `ConceptAwareStrategy` i
+`ConceptAgnosticStrategy` przekazują sterowanie do istniejącego `learn()`. Scenariusze wołają wyłącznie
+`learn_concept`, więc nie ma w nich żadnego testu typu, a istniejące strategie działają bez zmian.
+`NaiveSupervisedStrategy` nadpisuje `learn_concept` i woła
+`SupervisedVisionModel.fit_supervised(data, labels, masks)`; jej `learn()` jawnie rzuca
+`NotImplementedError`, bo trening bez etykiet nie ma dla niej sensu.
+
+Strategia dostaje `Concept`, bo tylko ona wie, czy koncept niesie maski; model dostaje tablice.
 
 ### 3.5 `ImageLoadOptions` zamiast `validate_read_options`
 
@@ -161,7 +169,7 @@ Publiczne `read_vision_dataset` / `read_dataset` zachowują dotychczasowe argume
 
 Koncepty MVTec-AD i VisA są dodane do `test_concepts`, ale nie do `train_concepts`. Scenariusz ocenia je
 po każdym etapie bez żadnej zmiany kodu, a `GroupedConceptMetricCallback` rozpoznaje grupy, które nigdy
-nie wystąpiły jako nauczone, i raportuje je w `held_out_groups`. Callback z referencją do strategii
+nie wystąpiły jako nauczone, i raportuje je w `held_out_columns`. Callback z referencją do strategii
 okazał się niepotrzebny.
 
 Zero-shot jest odrzucany dla scenariusza 1, bo MVTec-AD i VisA są tam częścią strumienia treningowego.

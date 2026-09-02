@@ -3,15 +3,18 @@ from typing import Dict
 import numpy as np
 
 from pyclad.data.concept import Concept
-from pyclad.strategies.strategy import SupervisedStrategy
+from pyclad.strategies.strategy import ConceptIncrementalStrategy
 from pyclad.vision.data.vision_concept import VisionConcept
 from pyclad.vision.models.supervised_vision_model import SupervisedVisionModel
 from pyclad.vision.prediction_results import VisionPredictionResults
 
 
-class NaiveSupervisedStrategy(SupervisedStrategy):
+class NaiveSupervisedStrategy(ConceptIncrementalStrategy):
     def __init__(self, model: SupervisedVisionModel):
         self._model = model
+
+    def learn(self, data: np.ndarray) -> None:
+        raise NotImplementedError(f"{self.name()} trains on labelled concepts, use learn_concept()")
 
     def learn_concept(self, concept: Concept) -> None:
         if concept.labels is None:
