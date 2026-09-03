@@ -330,3 +330,48 @@ a nie przez `LazyVisionConceptList`.
 
 Potwierdza to założenie z §3.1 i §3.2: kosztem benchmarku jest ewaluacja, nie trening, więc granulacja
 i sposób trzymania danych testowych w pamięci są ważniejsze niż cokolwiek po stronie treningu.
+
+---
+
+## 6. Baseline ADCT — ustalenia z lektury referencji
+
+Port modelu bazowego (`pyclad/vision/models/adct/`) odtwarza referencję, a nie „poprawną" wersję CLIP.
+Trzy odstępstwa referencji od standardowego użycia CLIP są istotne dla wyników i muszą być powtórzone,
+bo checkpointy zostały wytrenowane właśnie tak.
+
+### 6.1 Backbone używa `nn.GELU` zamiast QuickGELU
+
+`CLIP/clip.py::create_model` buduje model przez `CLIP(**model_cfg, cast_dtype=cast_dtype)` — bez
+`quick_gelu`, a `_build_vision_tower` ma `quick_gelu: bool = False`, więc aktywacją jest `nn.GELU`.
+Wagi pochodzą z `load_openai_model`, który buduje pomocniczy model z `quick_gelu=True`, ale ten model
+służy wyłącznie do wyciągnięcia `state_dict()` i jest odrzucany. Komentarz w ich własnym kodzie
+(`model.py:82`) mówi wprost, że modele OpenAI trenowano z QuickGELU.
+
+Odtwarzamy to: `build_clip_backbone` tworzy `open_clip.create_model("ViT-L-14-336")` (czyli `nn.GELU`,
+bo konfiguracja o tej nazwie nie ustawia `quick_gelu`) i wgrywa do niego wagi OpenAI.
+
+### 6.2 Enkoder tekstu działa bez maski przyczynowej
+
+`CoOp.py::TextEncoder.forward` woła `self.transformer(x)`, a ich `Transformer.forward` ma
+`attn_mask: Optional[torch.Tensor] = None`. Standardowy CLIP przekazuje tu maskę przyczynową. Nasz
+`ClipTextEncoder` powtarza wywołanie bez maski.
+
+### 6.3 Obrazy nie są normalizowane statystykami CLIP
+
+`dataset/continual.py` w ścieżce ewaluacji robi tylko `convert("RGB")`, `exif_transpose`,
+`Resize(336, BICUBIC)` i `ToTensor()`. `create_model` ustawia `model.visual.image_mean/image_std`, ale
+nikt ich nie używa. Do modelu wchodzą wartości z zakresu [0, 1]. Nasz `Adct._to_tensor` dzieli przez 255
+i nie normalizuje.
+
+### 6.4 Brak `albumentations` w `requirements.txt`
+
+`dataset/continual.py` importuje `albumentations` i `albumentations.pytorch.ToTensorV2`, a
+`requirements.txt` ich nie wymienia — instalacja z pliku nie wystarcza do uruchomienia repozytorium.
+
+### 6.5 Podpis Tabeli 2 wskazuje zły scenariusz
+
+Tabela 2 ma podpis „Experimental results on Scenario 3", identyczny jak Tabela 3, ale jej kolumny to
+58-5 (12 zadań), 58-10 (6 zadań) i 58-30 (2 zadania), co odpowiada 60 nowym klasom, czyli scenariuszowi
+2 (scenariusz 3 ma 30 nowych klas, więc 6/3/1 zadań — i to są kolumny Tabeli 3). Tekst artykułu
+potwierdza: „we refer to the quantitative results from Scenarios 2 and 3, presented in Table 2 and
+Table 3". Podpis Tabeli 2 jest błędny.
