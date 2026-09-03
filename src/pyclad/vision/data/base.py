@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -13,6 +14,7 @@ from pyclad.data.concept import Concept
 from pyclad.data.datasets.concepts_dataset import ConceptsDataset
 from pyclad.vision.data._utils import resolve_category_order
 from pyclad.vision.data.masks import load_ground_truth_masks_for_samples
+from pyclad.vision.data.parallel import map_in_threads
 from pyclad.vision.data.sample import VisionSample
 from pyclad.vision.data.vision_concept import VisionConcept
 
@@ -190,7 +192,7 @@ def materialize_samples(samples: Sequence[VisionSample], options: ImageLoadOptio
     if options.data_mode == "paths":
         return np.asarray([str(sample.image_path) for sample in samples], dtype=object)
 
-    arrays = [_load_image(sample.image_path, options) for sample in samples]
+    arrays = map_in_threads(partial(_load_image, options=options), [sample.image_path for sample in samples])
     if len(arrays) == 0:
         return np.asarray([], dtype=np.float32)
 
