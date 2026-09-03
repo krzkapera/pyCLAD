@@ -421,5 +421,39 @@ przenieść lub przemianować po rozpakowaniu.
 ### 7.5 MPDD nie ma źródła nadającego się do skryptu
 
 README oryginalnego zbioru wskazuje folder SharePoint uczelni (`vutbr-my.sharepoint.com`), którego nie
-da się pobrać bezwarunkowym żądaniem HTTP. Istnieją nieoficjalne kopie na HuggingFace, ale ich
-zawartości nie weryfikowaliśmy — MPDD trzeba dostarczyć ręcznie.
+da się pobrać bezwarunkowym żądaniem HTTP, a repozytorium `stepanje/MPDD` nie ma wydań z danymi. MPDD
+trzeba dostarczyć ręcznie.
+
+### 7.6 MVTec-AD również wymaga obejścia
+
+Link z `datasets_download_link.txt` prowadzi na stronę MVTeca, która publicznie wystawia wyłącznie
+archiwum z kodem ewaluacji; sam zbiór jest za formularzem, a historyczny bezpośredni odsyłacz do
+mydrive zwraca 404. Użyliśmy kopii `ProgrammerGnome/MVTecAD` na HuggingFace, która trzyma dosłowne
+archiwum `mvtec_anomaly_detection.tar.xz` o rozmiarze zgodnym z oryginałem. Zawartość zweryfikowana
+przeciwko meta: `scenario1_base` i `meta_mvtec` rozwiązują się bez braków.
+
+VisA pobiera się natomiast wprost z oryginalnego źródła (`amazon-visual-anomaly.s3.us-west-2`,
+bez uwierzytelnienia).
+
+### 7.7 Scenariusz 1 wymaga siedmiu zbiorów, nie pięciu
+
+Scenariusze 2 i 3 składają się z ContinualAD, Real-IAD, VIADUCT, MPDD i BTAD, ale scenariusz 1 dokłada
+MVTec-AD i VisA — trenuje na nich, dlatego nie ma w nim ewaluacji zero-shot. Rozliczenie klas zrobione
+tylko na metach scenariusza 2 przeoczy te dwa zbiory.
+
+### 7.8 Stan po pobraniu
+
+Wszystkie meta rozwiązują się bez braków (`img_path` i `mask_path` sprawdzone plik po pliku):
+
+| meta | obrazy | maski |
+| --- | --- | --- |
+| `scenario1_base` | 117 275 | 45 151 |
+| `scenario1_{5,10,30}classes_tasks` | 78 883 | 28 740 |
+| `scenario2_base` | 96 253 | 36 552 |
+| `scenario2_30classes_tasks` | 95 748 | 34 881 |
+| `scenario3_base` | 108 078 | 37 710 |
+| `scenario3_30classes_tasks` | 53 442 | 17 897 |
+| `meta_mvtec` (zero-shot) | 5 354 | 1 258 |
+
+Zajętość na dysku: ContinualAD 66 GB, VIADUCT 20 GB, Real-IAD-512 15 GB, BTAD 5,6 GB, MVTec-AD 5,0 GB,
+VisA 1,9 GB, MPDD 1,8 GB — razem 115 GB.
