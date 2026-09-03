@@ -375,3 +375,51 @@ Tabela 2 ma podpis „Experimental results on Scenario 3", identyczny jak Tabela
 2 (scenariusz 3 ma 30 nowych klas, więc 6/3/1 zadań — i to są kolumny Tabeli 3). Tekst artykułu
 potwierdza: „we refer to the quantitative results from Scenarios 2 and 3, presented in Table 2 and
 Table 3". Podpis Tabeli 2 jest błędny.
+
+---
+
+## 7. Pozyskanie danych
+
+Benchmark wymaga pięciu zbiorów. Meta referencji odwołują się do nich prefiksami
+`continual_ad`, `Real-IAD-512`, `VIADUCT`, `BTAD`, `MPDD` — to definiuje docelowy układ katalogów pod
+`--data_root`.
+
+### 7.1 Real-IAD wymaga wariantu 512 i zgody na licencję
+
+Repozytorium `Real-IAD/Real-IAD` na HuggingFace ma `gated: auto` (CC BY-NC-SA 4.0) — bez
+uwierzytelnienia `resolve` zwraca „Access to dataset Real-IAD/Real-IAD is restricted". Potrzebna jest
+akceptacja warunków na stronie zbioru i token z `canReadGatedRepos`.
+
+Całe repozytorium to 622 GiB w czterech wariantach rozdzielczości, ale meta wskazują wyłącznie
+`Real-IAD-512`, więc wystarczy `realiad_512/*.zip` — **14,17 GiB** w 30 archiwach. `realiad_raw`
+(507 GiB), `realiad_1024` (54 GiB) i `realiad_256` (4 GiB) są zbędne.
+
+Archiwa mają wewnątrz prefiks `<klasa>/`, a meta oczekują `Real-IAD-512/images/<klasa>/...`, więc
+rozpakowanie musi celować w podkatalog `images`, nie w korzeń zbioru.
+
+### 7.2 Nazwy plików w Real-IAD mają niespójny separator
+
+Część klas używa podwójnego podkreślenia po nazwie klasy (`audiojack__0001_NG_BX_C1_...jpg`), część
+pojedynczego (`toy_brick_0258_OK_C5_...jpg`). Meta odwzorowują to wiernie, więc dla nas jest to
+nieistotne, ale każdy kod składający ścieżki z nazwy klasy i identyfikatora próbki się na tym wywróci.
+
+### 7.3 VIADUCT: 9 z 49 archiwów bez `Content-Length`
+
+Repozytorium fordatis (`handle/fordatis/363.2`) udostępnia jedno archiwum ZIP na klasę, bez
+uwierzytelnienia. Dla 40 z 49 `HEAD` zwraca `Content-Length` (razem 13,21 GiB), dla pozostałych 9
+odpowiedź jest chunkowana i rozmiaru nie podaje — weryfikacja kompletności pobrania musi w tych
+przypadkach opierać się na odczycie centralnego katalogu ZIP, nie na porównaniu rozmiaru.
+
+Nazwy archiwów odpowiadają dokładnie nazwom katalogów klas w meta (włącznie ze spacjami i numerycznym
+prefiksem, np. `11 ring cable lug`), a prefiks wewnątrz archiwum to `<klasa>/`.
+
+### 7.4 BTAD ma inny prefiks w archiwum niż w meta
+
+`btad.zip` rozpakowuje się do `BTech_Dataset_transformed/`, a meta oczekują `BTAD/`. Katalog trzeba
+przenieść lub przemianować po rozpakowaniu.
+
+### 7.5 MPDD nie ma źródła nadającego się do skryptu
+
+README oryginalnego zbioru wskazuje folder SharePoint uczelni (`vutbr-my.sharepoint.com`), którego nie
+da się pobrać bezwarunkowym żądaniem HTTP. Istnieją nieoficjalne kopie na HuggingFace, ale ich
+zawartości nie weryfikowaliśmy — MPDD trzeba dostarczyć ręcznie.
