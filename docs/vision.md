@@ -142,3 +142,124 @@ callbacks = [
     # ... PixelAveragePrecision, PixelF1Score, PixelIoU, PixelDiceScore
 ]
 ```
+---
+
+# Continual-MEGA
+
+`Continual-MEGA` is a large-scale continual anomaly-detection benchmark built from seven datasets:
+ContinualAD, MVTec-AD, VisA, Real-IAD, VIADUCT, BTAD and MPDD.
+
+## Data layout
+
+Point `data_root` at a directory holding all seven datasets under the names used by the benchmark
+metadata, and `meta_dir` at the `meta_files/` directory of the
+[reference repository](https://github.com/Continual-Mega/Continual-MEGA-Baseline):
+
+```
+continual_mega/
+├── continual_ad/
+├── mvtec_anomaly_detection/
+├── VisA_20220922/
+├── VIADUCT/
+├── Real-IAD-512/
+├── MPDD/
+├── BTAD/
+└── meta_files/
+    ├── scenario1_base.json
+    ├── scenario1_5classes_tasks.json
+    ├── ...
+    └── meta_mvtec.json
+```
+
+ContinualAD is published on
+[HuggingFace](https://huggingface.co/datasets/Continual-Mega/Continual-MEGA-Benchmark); the remaining six
+datasets have to be downloaded from their own sources.
+
+## Scenarios
+
+| Scenario | Base classes | New classes | Zero-shot |
+|---|---|---|---|
+| 1 | 85 (all datasets) | 60, split into 12 / 6 / 2 tasks | – |
+| 2 | 58 (no MVTec-AD, no VisA) | 60, split into 12 / 6 / 2 tasks | MVTec-AD, VisA |
+| 3 | 58 (no MVTec-AD, no VisA, no ContinualAD) | 30, split into 6 / 3 / 1 tasks | MVTec-AD, VisA |
+
+```python
+from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaBenchmarkReader
+
+reader = ContinualMegaBenchmarkReader(
+    data_root="resources/vision/continual_mega",
+    meta_dir="resources/vision/continual_mega/meta_files",
+    scenario=2,
+    task_size=30,
+    zero_shot=True,
+    train_samples="all",
+)
+dataset = reader.read_dataset()
+```
+
+`ContinualMegaBenchmarkReader` holds the protocol — which scenario, how large a task, whether MVTec-AD
+and VisA are held out — and `read_dataset()` turns it into a `ContinualMegaDataset`, the stream a
+scenario consumes. `index_groups()` returns the same split as plain metadata, without touching a single
+image.
+
+Training concepts are the task groups (`base`, `task_1`, …); test concepts are individual classes. The
+class → group mapping is available through `dataset.group_by_concept()`.
+
+## Metrics
+
+The benchmark reports image-level ROC-AUC and pixel-level AP, averaged over the classes of each group.
+Use the grouped callbacks together with `AverageAccuracy` (ACC — mean of the last row of the group
+matrix) and `ForgettingMeasureStrict` (FM — drop from the best previously observed score, excluding the
+task learned last):
+
+```python
+groups = dataset.group_by_concept()
+summarized_metrics = [AverageAccuracy(), ForgettingMeasureStrict()]
+
+callbacks = [
+    GroupedConceptMetricCallback(RocAuc(), groups, summarized_metrics),
+    GroupedVisionPixelConceptMetricCallback(PixelAveragePrecision(), groups, summarized_metrics),
+]
+```
+
+Held-out zero-shot groups appear under `held_out_columns` in the callback output and are excluded from
+ACC and FM.
+
+These two are separate from `ConceptMetricCallback` and `VisionPixelConceptMetricCallback`: they build a
+group matrix rather than a concept matrix, so a training concept may cover several test concepts. The
+pixel variant derives from the image one and overrides only how the value is read. Use the plain
+callbacks whenever every training concept has exactly one matching test concept.
+
+## Training modes
+
+`train_samples="all"` reproduces the benchmark: 10 normal and 10 anomalous images per class, with pixel
+masks. That needs a model that trains on supervision rather than on normal data alone:
+
+```python
+from pyclad.models.supervised_model import SupervisedModel          # fit(data, labels)
+from pyclad.vision.models.supervised_vision_model import SupervisedVisionModel  # fit(data, labels, masks=None)
+from pyclad.vision.strategies.naive_supervised import NaiveSupervisedStrategy
+
+strategy = NaiveSupervisedStrategy(model)
+```
+
+`SupervisedModel` is a sibling of `Model`, not a subtype: `Model.fit(data)` and
+`SupervisedModel.fit(data, labels)` are different contracts, and a supervised model cannot stand in
+where an unsupervised one is expected. `SupervisedVisionModel` *is* a subtype of `SupervisedModel` —
+`masks` is optional, so it still satisfies `fit(data, labels)`.
+
+The same split runs through the strategy and the scenario. `SupervisedStrategy.learn(concept)` takes a
+concept rather than an array, because labels and masks travel with the concept, and
+`SupervisedConceptIncrementalScenario` drives it:
+
+```python
+from pyclad.scenarios.supervised_concept_incremental import SupervisedConceptIncrementalScenario
+
+SupervisedConceptIncrementalScenario(dataset=dataset, strategy=strategy, callbacks=callbacks).run()
+```
+
+This mirrors how pyCLAD already separates concept-aware, concept-incremental and concept-agnostic
+streams: one strategy contract per kind of stream, one scenario that speaks it.
+
+`train_samples="normal"` drops the anomalous training images so that one-class models such as PaSTe and
+FastFlow can be evaluated on the same streams with the usual strategies.
