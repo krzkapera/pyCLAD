@@ -25,7 +25,7 @@ class ConceptIncrementalScenario:
             callback_composite.before_concept_processing(concept=train_concept)
             callback_composite.before_training()
 
-            self._strategy.learn_concept(train_concept)
+            self._strategy.learn(data=train_concept.data)
 
             callback_composite.after_training(learned_concept=train_concept)
 

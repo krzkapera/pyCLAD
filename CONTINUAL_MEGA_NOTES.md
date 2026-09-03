@@ -149,10 +149,17 @@ uczonych — grupy zero-shot trafiają do osobnej sekcji `held_out_columns`.
 wywróciłoby `der.learn`, `agem.learn`, `mste.learn` (brak `**kwargs`) oraz wszystkie 8 implementacji
 `fit`, w tym modele spoza repozytorium.
 
-Zamiast tego dokładamy do `Strategy` jedną metodę polimorficzną — `learn_concept(concept)` — której
-domyślne implementacje w `ConceptIncrementalStrategy`, `ConceptAwareStrategy` i
-`ConceptAgnosticStrategy` przekazują sterowanie do istniejącego `learn()`. Scenariusze wołają wyłącznie
-`learn_concept`, więc nie ma w nich żadnego testu typu, a istniejące strategie działają bez zmian.
+Rozwiązanie: **czwarty kontrakt strumienia**, dokładnie tak, jak projekt już rozwiązuje ten problem.
+pyCLAD ma jedno ABC strategii na rodzaj strumienia (`ConceptAwareStrategy`, `ConceptIncrementalStrategy`,
+`ConceptAgnosticStrategy`), każde z własną sygnaturą `learn`, i jeden scenariusz mówiący tym kontraktem.
+Nadzór to kolejna oś tego samego podziału, więc dokładamy `SupervisedStrategy.learn(concept)` oraz
+`SupervisedConceptIncrementalScenario`.
+
+Klasa bazowa `Strategy` nie deklaruje `learn` w ogóle, więc nowa sygnatura z niczym nie koliduje.
+`strategy.py` i istniejące scenariusze zostają nietknięte — zero różnic względem `main`. Ceną jest
+skopiowana pętla `run()` (~25 linii), ale `concept_incremental.py` i `concept_aware.py` już dziś różnią
+się między sobą tylko dwoma wywołaniami, więc czwarta kopia jest zgodna z konwencją projektu, a nie
+nowym zapachem.
 Po stronie modeli `SupervisedModel` (rdzeń) deklaruje `fit(data, labels)` i jest **rodzeństwem**
 `Model`, nie jego podtypem — `fit(data)` i `fit(data, labels)` to różne kontrakty, a model nadzorowany
 nie może wystąpić tam, gdzie oczekiwany jest nienadzorowany. Kosztem jest powtórzenie deklaracji
@@ -163,8 +170,10 @@ Maski są sygnałem pikselowym, więc nie ma ich w rdzeniu. `SupervisedVisionMod
 vision jako `fit(data, labels, masks=None)` i **jest** podtypem `SupervisedModel`, bo parametr
 opcjonalny nie zawęża kontraktu.
 
-`NaiveSupervisedStrategy` nadpisuje `learn_concept` i woła `fit(data, labels, masks)`; jej `learn()`
-rzuca `SupervisionRequiredError`, bo trening bez etykiet nie ma dla niej sensu.
+`NaiveSupervisedStrategy` implementuje `SupervisedStrategy.learn(concept)` i woła
+`fit(data, labels, masks)`. `SupervisionRequiredError` zostaje na jeden przypadek: koncept bez etykiet.
+Wcześniejsza wersja musiała dodatkowo zaślepiać odziedziczone `learn(data)` — przy własnym ABC nie ma
+czego zaślepiać.
 
 Strategia dostaje `Concept`, bo tylko ona wie, czy koncept niesie maski; model dostaje tablice.
 

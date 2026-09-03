@@ -248,5 +248,18 @@ strategy = NaiveSupervisedStrategy(model)
 where an unsupervised one is expected. `SupervisedVisionModel` *is* a subtype of `SupervisedModel` —
 `masks` is optional, so it still satisfies `fit(data, labels)`.
 
+The same split runs through the strategy and the scenario. `SupervisedStrategy.learn(concept)` takes a
+concept rather than an array, because labels and masks travel with the concept, and
+`SupervisedConceptIncrementalScenario` drives it:
+
+```python
+from pyclad.scenarios.supervised_concept_incremental import SupervisedConceptIncrementalScenario
+
+SupervisedConceptIncrementalScenario(dataset=dataset, strategy=strategy, callbacks=callbacks).run()
+```
+
+This mirrors how pyCLAD already separates concept-aware, concept-incremental and concept-agnostic
+streams: one strategy contract per kind of stream, one scenario that speaks it.
+
 `train_samples="normal"` drops the anomalous training images so that one-class models such as PaSTe and
 FastFlow can be evaluated on the same streams with the usual strategies.

@@ -5,13 +5,13 @@ from typing import List
 from pyclad.callbacks.callback import Callback
 from pyclad.callbacks.composite_callback import CallbackComposite
 from pyclad.data.datasets.concepts_dataset import ConceptsDataset
-from pyclad.strategies.strategy import ConceptAwareStrategy
+from pyclad.strategies.supervised_strategy import SupervisedStrategy
 
 logger = logging.getLogger(__name__)
 
 
-class ConceptAwareScenario:
-    def __init__(self, dataset: ConceptsDataset, strategy: ConceptAwareStrategy, callbacks: List[Callback]):
+class SupervisedConceptIncrementalScenario:
+    def __init__(self, dataset: ConceptsDataset, strategy: SupervisedStrategy, callbacks: List[Callback]):
         self._dataset = dataset
         self._strategy = strategy
         self._callbacks = callbacks
@@ -25,14 +25,14 @@ class ConceptAwareScenario:
             callback_composite.before_concept_processing(concept=train_concept)
             callback_composite.before_training()
 
-            self._strategy.learn(data=train_concept.data, concept_id=train_concept.name)
+            self._strategy.learn(train_concept)
 
             callback_composite.after_training(learned_concept=train_concept)
 
             for test_concept in self._dataset.test_concepts():
                 logger.info(f"Starting evaluation of concept {test_concept.name}")
                 callback_composite.before_evaluation()
-                result = self._strategy.predict(data=test_concept.data, concept_id=test_concept.name)
+                result = self._strategy.predict(data=test_concept.data)
                 callback_composite.after_evaluation(
                     evaluated_concept=test_concept,
                     y_true=test_concept.labels,
