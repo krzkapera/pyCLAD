@@ -1,3 +1,5 @@
+from typing import Callable, Optional
+
 import numpy as np
 import open_clip
 import torch
@@ -8,19 +10,23 @@ from pyclad.vision.models.adct.prompt_learner import AdctPromptLearner
 from pyclad.vision.models.adct.prompts import ADCT_ANOMALY_PROMPTS, ADCT_NORMAL_PROMPTS
 from pyclad.vision.models.adct.scoring import anomaly_scores_and_maps
 from pyclad.vision.models.adct.text_encoder import ClipTextEncoder, encode_prompt_groups
+from pyclad.vision.models.adct.trainer import AdctTrainer
 from pyclad.vision.models.adct.visual_encoder import AdaptedVisualEncoder
+from pyclad.vision.models.supervised_vision_model import SupervisedVisionModel
 from pyclad.vision.prediction_results import VisionPredictionResults
 
 ADCT_PROMPT_GROUPS = {"normal": ADCT_NORMAL_PROMPTS, "abnormal": ADCT_ANOMALY_PROMPTS}
 IMAGE_VALUE_RANGE = 255.0
 
 
-class Adct:
+class Adct(SupervisedVisionModel):
     def __init__(self, config: AdctConfig):
         self.config = config
         self.device = torch.device(config.device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
         clip_model = build_clip_backbone(config.clip_model_name, config.weights_path)
+        clip_model.requires_grad_(False)
+        clip_model.eval()
         self.visual_encoder = AdaptedVisualEncoder(
             visual=clip_model.visual,
             feature_layers=config.feature_layers,
@@ -37,6 +43,31 @@ class Adct:
             tokenize=open_clip.tokenize,
         ).to(self.device)
         self.text_encoder = ClipTextEncoder(clip_model).to(self.device)
+        self.visual_encoder.eval()
+        self.prompt_learner.eval()
+        self.text_encoder.eval()
+        self.trainer = AdctTrainer(
+            visual_encoder=self.visual_encoder,
+            prompt_learner=self.prompt_learner,
+            text_features=self.text_features,
+            config=config,
+            train_prompts=config.train_prompts,
+        )
+
+    def fit(
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        masks: Optional[np.ndarray] = None,
+        on_epoch_end: Optional[Callable[[int, float], None]] = None,
+    ) -> None:
+        images = self._to_tensor(data)
+        targets = torch.from_numpy(labels)
+        pixel_targets = self._mask_tensor(masks, labels)
+        while self.trainer.epochs_completed < self.config.epochs:
+            loss = self.trainer.train_epoch(images, targets, pixel_targets)
+            if on_epoch_end is not None:
+                on_epoch_end(self.trainer.epochs_completed, loss)
 
     def text_features(self) -> torch.Tensor:
         return encode_prompt_groups(self.text_encoder, self.prompt_learner())
@@ -63,6 +94,13 @@ class Adct:
             anomaly_scores=anomaly_scores,
             score_maps=np.concatenate(maps).astype(np.float32),
         )
+
+    def _mask_tensor(self, masks: Optional[np.ndarray], labels: np.ndarray) -> torch.Tensor:
+        if masks is None:
+            if labels.any():
+                raise ValueError(f"{self.name()} needs ground truth masks to train on anomalous samples")
+            return torch.zeros((len(labels), self.config.image_size, self.config.image_size))
+        return torch.from_numpy(masks).float()
 
     def _to_tensor(self, images: np.ndarray) -> torch.Tensor:
         tensor = torch.from_numpy(np.ascontiguousarray(images)).to(self.device)

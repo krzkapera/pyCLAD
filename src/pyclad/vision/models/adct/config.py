@@ -16,4 +16,10 @@ class AdctConfig:
     logit_scale: float = 100.0
     noise_sigma: float = 0.25
     batch_size: int = 16
+    train_batch_size: int = 16
+    epochs: int = 50
+    train_prompts: bool = True
+    learning_rate: float = 1e-4
+    prompt_learning_rate: float = 1e-4
+    seed: int = 2025
     device: Optional[str] = None
