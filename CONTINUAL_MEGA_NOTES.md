@@ -527,3 +527,41 @@ drożej — pamięć warto natomiast dobierać z pomiaru.
 
 Naturalny kolejny krok, gdyby czas zaczął uwierać: prefetch następnego konceptu w tle podczas
 inferencji. Podniósłby CPU efficiency i skrócił czas o rząd 40 %, kosztem złożoności pętli ewaluacji.
+
+### 8.6 Zero-shot: kolumna „zero-shot (Avg.)" nie dotyczy jednej konfiguracji
+
+Ten sam checkpoint `checkpoint_task_2.pth` posłużył do ewaluacji zero-shot na MVTec-AD (meta autorów) i
+VisA (split `split_csv/1cls.csv`, bo dla VisA autorzy nie wydali meta — patrz 1.3):
+
+| metryka | pyCLAD | Tabela 4, wiersz pełny, 58-30, 3 ziarna | Tabela 2, „zero-shot (Avg.)" |
+| --- | --- | --- | --- |
+| MVTec-AD Image-AUROC | 80,2 | 81,2 ± 0,8 (−1,2σ) | 78,4 |
+| MVTec-AD Pixel-AP | 33,0 | 32,1 ± 0,8 (+1,1σ) | 31,5 |
+| VisA Image-AUROC | 78,7 | 78,8 ± 0,2 (−0,5σ) | 76,9 |
+| VisA Pixel-AP | 18,5 | 18,8 ± 0,3 (−1,0σ) | 17,2 |
+
+Wobec kolumny z Tabeli 2 nasze wyniki są konsekwentnie wyższe — o 1,8 obrazowo i 1,4 pikselowo na obu
+zbiorach naraz. Tak regularne odchylenie nie wygląda na szum. Wyjaśnia je Tabela 4, która raportuje
+zero-shot **osobno dla konfiguracji 58-30**, czyli dokładnie dla wydanego checkpointu: tam wszystkie
+cztery nasze liczby mieszczą się w 1,2 odchylenia standardowego.
+
+Wniosek: nagłówek „zero-shot (Avg.)" w Tabelach 2 i 3 oznacza uśrednienie po trzech rozmiarach zadania
+(58-5, 58-10, 58-30), a nie wynik konfiguracji 58-30. Artykuł nigdzie tego nie definiuje. Przy tym
+założeniu implikowana średnia zero-shot dla 58-5 i 58-10 wynosi 77,0 / 31,2 (MVTec) i 76,0 / 16,4
+(VisA) — czyli nieco poniżej wartości dla 58-30, co jest spójne z tym, że więcej zadań oznacza większy
+dryf. Zweryfikować tego nie da się bez checkpointów dla 5 i 10 klas na zadanie, których autorzy nie
+wydali.
+
+Ta sama różnica ziaren tłumaczy relację wyników ciągłych: Tabela 2 podaje 76,8 / 27,5 przy FM 1,0 / 2,6
+(pojedynczy przebieg, ten z wydanego checkpointu, który odtworzyliśmy co do cyfry), a Tabela 4 dla tej
+samej konfiguracji 76,3 ± 0,4 / 26,8 ± 0,8 przy FM 1,4 ± 0,5 / 2,8 ± 0,2 (średnia z trzech ziaren).
+
+### 8.7 Co pozostaje niedostępne bez treningu
+
+Wydane są wyłącznie checkpointy scenariusza 2 dla 30 klas na zadanie. Bez dopisania `fit` nie da się
+odtworzyć: całej Tabeli 1 (scenariusz 1), całej Tabeli 3 (scenariusz 3), konfiguracji 58-5 i 58-10 w
+Tabeli 2, trzech pierwszych wierszy ablacji z Tabeli 4 ani krzywych uczenia z Rysunku 5.
+
+Pierwszy wiersz Tabeli 4 („vanilla pretrained CLIP") formalnie nie wymaga treningu, ale artykuł nie
+precyzuje jego konfiguracji — nie wiadomo, czy prompty są wtedy bez uczonego kontekstu (`n_ctx=0`), czy
+z nieuczonym. Rozbieżność wobec tego wiersza nie byłaby więc informatywna.
