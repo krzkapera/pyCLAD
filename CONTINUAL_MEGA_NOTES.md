@@ -457,3 +457,73 @@ Wszystkie meta rozwiązują się bez braków (`img_path` i `mask_path` sprawdzon
 
 Zajętość na dysku: ContinualAD 66 GB, VIADUCT 20 GB, Real-IAD-512 15 GB, BTAD 5,6 GB, MVTec-AD 5,0 GB,
 VisA 1,9 GB, MPDD 1,8 GB — razem 115 GB.
+
+---
+
+## 8. Odtworzenie baseline'u ADCT
+
+### 8.1 Co odpowiada „podstawowej konfiguracji"
+
+Wydane checkpointy pokrywają wyłącznie scenariusz 2 z rozmiarem zadania 30 (`checkpoint_base.pth` plus
+`30classes_tasks/checkpoint_task_{1,2}.pth`) i dokładnie tę konfigurację uruchamia `eval_continual.sh`.
+Odpowiada jej kolumna **58-30 (2 tasks)** w tabeli, której podpis brzmi „Table 2 … Scenario 3" (patrz 6.5).
+Trening nie jest potrzebny — sama inferencja z checkpointów.
+
+### 8.2 Wynik
+
+Pełny przebieg na kompletnym zbiorze, 418 848 inferencji (95 093 + 134 114 + 189 641):
+
+| metryka | pyCLAD | paper |
+| --- | --- | --- |
+| Image ACC | 76,7567 → 76,8 | 76,8 |
+| Image FM | 1,0500 | 1,0 |
+| Pixel ACC | 27,4767 → 27,5 | 27,5 |
+| Pixel FM | 2,5700 → 2,6 | 2,6 |
+
+Macierze (wiersz = checkpoint, kolumna = grupa klas):
+
+```
+Image-AUROC        base   task_1   task_2      Pixel-AP        base   task_1   task_2
+after base       0.8201        -        -      after base    0.3571        -        -
+after task_1     0.8118   0.7350        -      after task_1  0.3394   0.2544        -
+after task_2     0.8153   0.7188   0.7686      after task_2  0.3354   0.2247   0.2642
+```
+
+Image FM wypada na 1,0500, czyli dokładnie na granicy zaokrąglenia do jednego miejsca — różnica rzędu
+1e-4 wobec referencji decyduje o kierunku zaokrąglenia. Pozostałe trzy liczby trafiają w wartości z
+artykułu.
+
+### 8.3 Zgodność z referencją klasa po klasie
+
+Poza wynikiem zbiorczym porównaliśmy wartości per klasa z `eval_continual.py` dla wszystkich trzech
+checkpointów — 17 par klasa×checkpoint. Największa różnica to **0,0039 dla Image-AUROC** (klasa
+`continual_ad_Cup`, której AUROC wynosi 0,42, więc jest najczulsza na perturbacje) i **0,0003 dla
+Pixel-AP**. Referencja liczy w `torch.cuda.amp.autocast()` (fp16), nasza implementacja w fp32 — to
+tłumaczy cały zaobserwowany rozrzut.
+
+### 8.4 Macierz z zerami zamiast NaN nie zmienia metryk
+
+Referencja inicjalizuje macierz zerami i nigdy nie wypełnia górnego trójkąta, my zostawiamy tam NaN.
+Dla ACC to bez znaczenia (liczy się tylko ostatni, w pełni wypełniony wiersz), a dla FM też, bo
+`np.max` po kolumnie z zerem i jedną wartością dodatnią daje tę samą wartość co `np.nanmax` po NaN i
+tej wartości. Zbieżność jest przypadkowa, nie wynika z konstrukcji — przy ujemnych wartościach metryki
+zera dawałyby inny wynik.
+
+### 8.5 Koszt i wydajność
+
+Trzy zadania tablicowe po 8 CPU i 48 GB, każde z jednym GH200: 56 min, 80 min i 111 min, razem 4,1
+godziny GPU. `MaxRSS` 44,6 GB, czyli 93 % przydziału — szczyt wyznacza `average_precision_score` na
+klasach Real-IAD (ok. 600 mln pikseli na klasę). CPU efficiency 19 %, co jest tu oczekiwane: wczytywanie
+idzie na ośmiu wątkach, ale inferencja na GPU jest wobec niego sekwencyjna, więc rdzenie czekają.
+
+Wąskim gardłem było wczytywanie: obrazy ContinualAD to JPEG 2992×2992, a pojedynczy rdzeń wyrabia
+11 obrazów na sekundę. Zmierzone tempo naszej ścieżki (10,90 img/s) i referencyjnej (11,15 img/s) jest
+praktycznie identyczne — referencja wygrywała wyłącznie czterema workerami `DataLoader`. Po
+zrównolegleniu wczytywania klasa 1 000 obrazów zajmuje 46 s zamiast ok. 500 s.
+
+Przy `TRESBillingWeights` tej partycji (GPU 1,0, CPU 0,0139, pamięć 0,0000082/MB) osiem rdzeni kosztuje
+11 % ceny samego GPU, a 48 GB pamięci 40 %. Oszczędzanie na rdzeniach wydłuża czas z GPU i wychodzi
+drożej — pamięć warto natomiast dobierać z pomiaru.
+
+Naturalny kolejny krok, gdyby czas zaczął uwierać: prefetch następnego konceptu w tle podczas
+inferencji. Podniósłby CPU efficiency i skrócił czas o rząd 40 %, kosztem złożoności pętli ewaluacji.
