@@ -70,7 +70,7 @@ class AdctTrainer:
         images, labels, masks = images.to(device), labels.to(device), masks.to(device)
 
         with torch.autocast("cuda"):
-            tokens, noisy_tokens = self.visual_encoder(images, with_noise=True)
+            tokens, noisy_tokens = self.visual_encoder(images, with_noise=self.config.use_synthetic_anomalies)
             text_features = self.text_features()
             loss = self._segmentation_loss(tokens, text_features, labels, masks)
             loss = loss + self._synthetic_anomaly_loss(noisy_tokens, text_features, labels)

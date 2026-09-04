@@ -19,6 +19,7 @@ class AdctConfig:
     train_batch_size: int = 16
     epochs: int = 50
     train_prompts: bool = True
+    use_synthetic_anomalies: bool = True
     learning_rate: float = 1e-4
     prompt_learning_rate: float = 1e-4
     seed: int = 2025
