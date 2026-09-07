@@ -565,3 +565,131 @@ Tabeli 2, trzech pierwszych wierszy ablacji z Tabeli 4 ani krzywych uczenia z Ry
 Pierwszy wiersz Tabeli 4 („vanilla pretrained CLIP") formalnie nie wymaga treningu, ale artykuł nie
 precyzuje jego konfiguracji — nie wiadomo, czy prompty są wtedy bez uczonego kontekstu (`n_ctx=0`), czy
 z nieuczonym. Rozbieżność wobec tego wiersza nie byłaby więc informatywna.
+
+---
+
+## 9. Pełne odtworzenie benchmarku z własnego treningu
+
+Trening całego benchmarku — trzy bazy po 50 epok i 50 zadań ciągłych po 20 epok — zajmuje łącznie
+około godziny GPU. Kosztem jest ewaluacja: pełne macierze dla dziewięciu konfiguracji to 8,5 mln
+inferencji, czyli około 109 godzin GPU.
+
+### 9.1 Wyniki wobec artykułu
+
+Wartości ACC i FM w formacie Image / Pixel.
+
+| tabela | konfiguracja | ACC nasze | ACC paper | Δ ACC | FM nasze | FM paper |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 85-5 (12 zadań) | 71,5 / 23,6 | 73,8 / 25,7 | −2,3 / −2,1 | 2,3 / 2,3 | 2,0 / 2,1 |
+| 1 | 85-10 (6) | 73,2 / 25,8 | 75,8 / 28,0 | −2,6 / −2,2 | 2,4 / 2,8 | 1,3 / 1,9 |
+| 1 | 85-30 (2) | 77,7 / 30,1 | 78,9 / 32,7 | −1,2 / −2,6 | 1,2 / 2,9 | 0,8 / 1,8 |
+| 2 | 58-5 (12) | 68,8 / 19,4 | 69,5 / 19,7 | −0,7 / −0,3 | 2,0 / 2,8 | 3,2 / 3,4 |
+| 2 | 58-10 (6) | 70,6 / 21,5 | 72,4 / 22,2 | −1,8 / −0,7 | 2,5 / 3,4 | 2,5 / 3,8 |
+| 2 | 58-30 (2) | 74,1 / 25,8 | 76,8 / 27,5 | −2,7 / −1,7 | 1,8 / 2,2 | 1,0 / 2,6 |
+| 3 | 58-5 (6) | 70,6 / 18,9 | 69,5 / 19,7 | +1,1 / −0,8 | 2,8 / 3,6 | 3,2 / 3,4 |
+| 3 | 58-10 (3) | 73,1 / 22,4 | 72,7 / 23,1 | +0,4 / −0,7 | 2,9 / 3,1 | 2,4 / 3,7 |
+| 3 | 58-30 (1) | 76,9 / 27,8 | 76,8 / 29,5 | +0,1 / −1,7 | −0,2 / 2,7 | −0,3 / 2,1 |
+
+Średnia różnica: −1,09 na Image-ACC i −1,43 na Pixel-ACC. Metryki obrazowe scenariusza 3 trafiają
+niemal dokładnie, metryki pikselowe są niżej wszędzie.
+
+### 9.2 Pomiar oddziela błąd pomiaru od błędu treningu
+
+Z wydanych checkpointów autorów nasz ewaluator odtwarza artykuł co do cyfry: Image ACC 76,8, Pixel ACC
+27,5, Pixel FM 2,6, Image FM na granicy zaokrąglenia (1,0500). Zgodność klasa po klasie z
+`eval_continual.py` dla wszystkich trzech checkpointów, 17 par klasa×checkpoint, mieści się w 0,0039
+dla Image-AUROC i 0,0003 dla Pixel-AP. Różnice z tabeli 9.1 pochodzą więc wyłącznie z treningu.
+
+---
+
+## 10. Ablacja syntetycznych anomalii nie odtwarza się nawet kodem autorów
+
+### 10.1 Poprawny odczyt wierszy Tabeli 4
+
+Układ znaczników w tabeli jest w ekstrakcji tekstu nieczytelny, ale tekst artykułu rozstrzyga:
+„omitting synthetic anomaly generation **(Adapters + Mixture)**". Drugi wiersz to zatem Adapters
+z Mixture bez Synthetic, a nie same adaptery — co zgadza się z jego niskim FM 0,6 / 0,3, bo to
+uśrednianie adapterów tłumi zapominanie.
+
+### 10.2 Kierunek efektu jest odwrotny niż raportowany
+
+Pixel-ACC dla konfiguracji 58-30, wariant bez syntetycznych minus wariant z syntetycznymi:
+
+| źródło | bez Synthetic | z Synthetic | różnica |
+| --- | --- | --- | --- |
+| artykuł, Tabela 4 | 22,3 | 26,8 | **−4,5** |
+| nasza implementacja, 4 ziarna | 29,0 ± 0,3 | 26,2 ± 0,6 | **+2,8** |
+| kod autorów, 3 ziarna | 30,8 ± 0,1 | 27,7 ± 0,9 | **+3,1** |
+
+Kod autorów odtwarza nasz kierunek, nie swój własny raportowany. Kontrola poprawności układu: ten sam
+kod na wierszu pełnym daje Image ACC 76,1 ± 0,3 wobec 76,3 ± 0,4 i Pixel ACC 27,7 ± 0,9 wobec
+26,8 ± 0,8 z artykułu, więc konfiguracja i pomiar są prawidłowe, a rozjeżdża się wyłącznie wariant bez
+syntetycznych.
+
+To samo widać w kolumnach zero-shot, gdzie odchylenia po czterech ziarnach wynoszą 0,4–0,9:
+
+| wiersz | MVTec Pixel-AP nasze / paper | VisA Pixel-AP nasze / paper |
+| --- | --- | --- |
+| bez Synthetic | 41,5 ± 0,4 / 26,3 | 22,4 ± 0,9 / 13,9 |
+| bez Mixture | 33,9 ± 1,1 / 35,7 | 18,3 ± 0,8 / 19,7 |
+| pełny | 32,7 ± 1,5 / 32,1 | 18,1 ± 0,8 / 18,8 |
+
+Wniosek: teza artykułu, że synteza anomalii jest kluczowa dla jakości lokalizacji, nie zachodzi
+w żadnej z dwóch implementacji. Syntetyczne anomalie **pogarszają** Pixel-AP o około 3 punkty.
+
+### 10.3 Błąd w kodzie autorów blokujący ablację
+
+`train_base.py` ma własny argument `--num_tasks` z domyślną wartością 12 i zapisuje pliki CSV z wynikami
+o 13 kolumnach, podczas gdy `train_continual.py --num_tasks 2` wczytuje je do macierzy 3×3 i przewraca
+się na `could not broadcast input array from shape (13,) into shape (3,)`. Skrypty w `train_scripts/`
+nigdy tego nie ujawniają, bo dla scenariusza 1 z pięcioma klasami na zadanie liczba zadań wynosi
+właśnie 12. Uruchomienie dowolnej innej konfiguracji wymaga podania `--num_tasks` również przy
+trenowaniu bazy.
+
+---
+
+## 11. Rozbieżność treningowa: ziarno czy implementacja
+
+Baza scenariusza 2, 58 klas, ta sama ewaluacja:
+
+| źródło | I-AUROC | P-AP |
+| --- | --- | --- |
+| wydany checkpoint | 82,01 | 35,71 |
+| kod autorów, 4 ziarna | 81,50 ± 0,36 | 36,50 ± 0,65 |
+| nasza implementacja, 5 ziaren | 80,81 ± 0,52 | 34,51 ± 0,85 |
+
+Wydany checkpoint mieści się w rozkładzie kodu autorów, więc jest zwykłym przebiegiem, a nie wynikiem
+szczególnym. Różnica implementacji wynosi 0,69 na I-AUROC (około 1,5 odchylenia, czyli szum) i 1,99 na
+P-AP (około 2,6 odchylenia). Nasza implementacja ma zatem realną, systematyczną stratę na lokalizacji,
+i tylko na niej — co odpowiada temu, że w tabeli 9.1 metryki pikselowe są niżej konsekwentnie, a
+obrazowe nie.
+
+Hipotezy obalone analitycznie przez lekturę kodu: optymalizator promptów autorów nie trenuje niczego
+poza `ctx`, bo `register_embeddings` w `PromptLearner` to zwykły słownik Pythona, a nie zarejestrowane
+bufory; kolejność grup promptów, agregacja cech tekstowych, miejsce liczenia strat względem
+interpolacji, parametry obu optymalizatorów, liczba epok i rozmiar batcha są zgodne.
+
+Hipotezy sprawdzane eksperymentem równoważności kroku treningowego: różnice numeryki `autocast`
+(referencja generuje szum na CPU w fp32 i przenosi na GPU, my generujemy na urządzeniu w dtype tensora)
+oraz zachowanie strat focal i dice w fp16. Arytmetycznie potwierdzone: w fp16 wyrażenie `1 − 1e-5`
+zaokrągla się dokładnie do 1,0, więc górny clamp w focal loss jest wtedy pusty, a suma po 112 896
+pikselach przekracza zakres fp16 przy średnim prawdopodobieństwie powyżej 0,58.
+
+---
+
+## 12. Wiersz „vanilla CLIP" z Tabeli 4
+
+Przeszukanie objęło 16 konfiguracji w trzech rundach. Komórka MVTec odtwarza się dokładnie —
+**75,3 / 2,2** wobec 75,2 / 2,3 — przy pojedynczej parze promptów („A photo of a normal object" i „A
+photo of an anomalous object", czyli czwarta z dziesięciu par autorów), enkoderze tekstu **z maską
+przyczynową** i wyniku obrazowym liczonym z globalnego osadzenia CLIP, a nie z maksimum po patchach.
+
+Rozstrzygające obserwacje z przeszukania: bez maski przyczynowej wynik spada do 59,5, sposób agregacji
+promptów jest bez znaczenia (79,0 wobec 79,1), a warstwa cech ma duże znaczenie (warstwa 12 daje 61,8,
+warstwa 6 daje 49,8).
+
+Komórka VisA nie odtwarza się żadną z przebadanych konfiguracji: pojedyncza para daje 64,1 przy celu
+61,8, a zestaw dwudziestu promptów trafia VisA (61,3), ale psuje MVTeca do 79,0. Split VisA został
+niezależnie potwierdzony pomiarem — dla wytrenowanego checkpointu `split_csv/1cls.csv` daje 78,68 /
+18,53 wobec 78,8 ± 0,2 / 18,8 ± 0,3 z Tabeli 4, podczas gdy pozostałe dwa splity zaniżają Pixel-AP do
+około 12,4 — więc nie jest to kwestia zbioru testowego.
