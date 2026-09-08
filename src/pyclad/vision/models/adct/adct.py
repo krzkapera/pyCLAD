@@ -34,6 +34,7 @@ class Adct(SupervisedVisionModel):
             bottleneck=config.bottleneck,
             adapter_weight=config.adapter_weight,
             noise_sigma=config.noise_sigma,
+            noise_in_float32=config.noise_in_float32,
         ).to(self.device)
         self.prompt_learner = AdctPromptLearner(
             token_embedding=clip_model.token_embedding,

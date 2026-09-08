@@ -15,12 +15,14 @@ class AdaptedVisualEncoder(nn.Module):
         bottleneck: int,
         adapter_weight: float,
         noise_sigma: float,
+        noise_in_float32: bool = False,
     ):
         super().__init__()
         self.visual = visual
         self.feature_layers = list(feature_layers)
         self.adapter_weight = adapter_weight
         self.noise_sigma = noise_sigma
+        self.noise_in_float32 = noise_in_float32
         self.adapters = nn.ModuleList(ClipAdapter(width, bottleneck) for _ in self.feature_layers)
 
     def forward(self, images: torch.Tensor, with_noise: bool = False) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
@@ -36,7 +38,8 @@ class AdaptedVisualEncoder(nn.Module):
             adapter = self.adapters[self.feature_layers.index(index + 1)]
             bottleneck, adapted = adapter(x)
             if with_noise:
-                noise = torch.normal(0.0, self.noise_sigma, x.shape, device=x.device, dtype=x.dtype)
+                dtype = torch.float32 if self.noise_in_float32 else x.dtype
+                noise = torch.normal(0.0, self.noise_sigma, x.shape, device=x.device, dtype=dtype)
                 noisy_bottleneck, _ = adapter(x + noise)
                 noisy_tokens.append(_patch_tokens(noisy_bottleneck))
 

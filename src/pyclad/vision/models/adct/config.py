@@ -15,6 +15,7 @@ class AdctConfig:
     adapter_weight: float = 0.1
     logit_scale: float = 100.0
     noise_sigma: float = 0.25
+    noise_in_float32: bool = False
     batch_size: int = 16
     train_batch_size: int = 16
     epochs: int = 50
