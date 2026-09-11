@@ -693,3 +693,70 @@ Komórka VisA nie odtwarza się żadną z przebadanych konfiguracji: pojedyncza 
 niezależnie potwierdzony pomiarem — dla wytrenowanego checkpointu `split_csv/1cls.csv` daje 78,68 /
 18,53 wobec 78,8 ± 0,2 / 18,8 ± 0,3 z Tabeli 4, podczas gdy pozostałe dwa splity zaniżają Pixel-AP do
 około 12,4 — więc nie jest to kwestia zbioru testowego.
+
+---
+
+## 13. Gdzie leży resztowa różnica treningowa
+
+### 13.1 Krok treningowy jest równoważny
+
+Porównanie przy identycznych wagach adapterów i kontekstu oraz tym samym batchu, nasza implementacja
+wobec `CLIPAD` i `PromptMaker` referencji:
+
+| etap | maksymalna różnica |
+| --- | --- |
+| cechy tekstowe | 6,7e-08 |
+| cechy wizualne, warstwy 6/12/18/24 | 1,4e-06 → 7,8e-04 |
+| strata segmentacyjna w fp32 | **9,5e-07** |
+| strata segmentacyjna pod `autocast` | 2,3e-04 |
+
+Straty, przebieg w przód i preprocessing są więc wykluczone jako źródło rozbieżności.
+
+### 13.2 Pod `autocast` focal i dice dostają fp32
+
+Zmierzone typy: wyjście bloku transformera `float16`, cechy tekstowe `float16`, logity po mnożeniu
+`float16`, **po interpolacji `float32`**, **po softmaksie `float32`**. Suma w dice na obraz wynosi
+55 956 przy zakresie fp16 do 65 504, ale liczy się w fp32, więc nie przepełnia.
+
+Obala to dwie hipotezy sprawdzane wcześniej arytmetycznie: pusty clamp w focal (w fp16 `1 − 1e-5`
+zaokrągla się do 1,0) i przepełnienie sumy w dice. Obie dotyczyłyby fp16, a tam jest fp32 — w obu
+implementacjach jednakowo.
+
+### 13.3 Jedyna realna różnica: dtype szumu
+
+```
+referencja:  torch.normal(0, sigma, x.shape).to(x.device)        # fp32, suma promowana do fp32
+nasza:       torch.normal(..., device=x.device, dtype=x.dtype)   # fp16, bo x jest fp16
+```
+
+Test równoważności prowadzony był przy `noise_sigma=0`, więc tej ścieżki nie obejmował — a to ona
+według ablacji z sekcji 10 rusza Pixel-AP o około 3 punkty.
+
+A/B na bazie scenariusza 2, trzy ziarna na wariant:
+
+| wariant | I-AUROC | Pixel-AP |
+| --- | --- | --- |
+| fp16 | 80,05 ± 0,98 | 32,07 ± 2,38 |
+| fp32 | 80,90 ± 0,30 | 34,43 ± 0,71 |
+
+Efekt fp32 − fp16 wynosi +2,36 na Pixel-AP przy błędzie standardowym 1,44, czyli **t = 1,64 — poniżej
+progu istotności**. Kierunek i rząd wielkości zgadzają się ze ściganą luką (1,99), a rozrzut spada
+trzykrotnie, ale trzy ziarna na ramię nie wystarczają do rozstrzygnięcia.
+
+### 13.4 Trening nie jest powtarzalny przy ustalonym ziarnie
+
+Ta sama konfiguracja fp16, ten sam sprzęt, `torch.manual_seed` ustawione, dwa niezależne przebiegi:
+
+| ziarno | przebieg A | przebieg B |
+| --- | --- | --- |
+| 1 | 34,71 | 34,31 |
+| 42 | **34,95** | **29,56** |
+| 111 | 33,90 | 32,35 |
+
+Przyczyną jest niedeterminizm operacji CUDA w propagacji wstecznej, kumulowany przez 50 epok.
+
+Ma to konsekwencję metodologiczną dla wcześniejszych sekcji: odchylenie 0,85 wyliczone w sekcji 11
+z pięciu ziaren opisywało zmienność **między ziarnami**, a nie pełną zmienność przebiegu, która sięga
+2,4. Teza o „systematycznej różnicy 2,0 punktu przy 2,6 odchylenia" była więc zbyt pewna. Różnica
+wobec kodu referencji pozostaje istotna także po korekcie (wariant fp32 34,43 ± 0,71 wobec 36,50 ± 0,65,
+t ≈ 4), ale każde porównanie oparte na małej liczbie przebiegów wymaga tu ostrożności.
