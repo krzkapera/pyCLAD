@@ -889,3 +889,49 @@ prowadzi na fałszywy trop.
 Zabezpieczenie: `build_clip_backbone` sprawdza teraz `batch_first` i przerywa z jawnym komunikatem,
 a `pyproject.toml` deklaruje grupę `vision` z ograniczeniem `open_clip_torch>=2.24,<3.0`. Wcześniej
 zależność nie była zadeklarowana w ogóle.
+
+## 17. Domknięcie: resztowa różnica treningowa wyjaśniona
+
+### 17.1 Pełne zestawienie konfiguracji
+
+Baza scenariusza 2, po sześć ziaren poza pierwszym wierszem:
+
+| konfiguracja | I-AUROC | Pixel-AP | powtarzalność |
+| --- | --- | --- | --- |
+| nasza, domyślna (n = 15) | 79,70 ± 1,81 | 33,23 ± 2,93 | nie |
+| nasza, flagi determinizmu | 78,50 ± 2,23 | 32,56 ± 1,80 | nie |
+| nasza, `need_weights=True` | 81,03 ± 0,62 | 35,75 ± 1,36 | nie |
+| **nasza, `need_weights` + determinizm** | 81,65 ± 0,56 | **36,29 ± 0,51** | **co do bitu** |
+| nasza, backend math + determinizm, GH200 | 82,12 ± 0,33 | 37,26 ± 0,18 | co do bitu |
+| nasza, backend math + determinizm, V100 | 81,77 ± 0,45 | 37,09 ± 0,57 | co do bitu |
+| **referencja, backend domyślny** | 81,78 ± 0,37 | **36,12 ± 0,94** | — |
+| referencja, backend math | 81,78 ± 0,31 | 36,47 ± 0,44 | — |
+
+Wobec referencji (36,12 ± 0,94), test niesparowany:
+
+| konfiguracja | delta | t | wniosek |
+| --- | --- | --- | --- |
+| nasza, domyślna | −2,89 | −3,41 | różne |
+| nasza, flagi determinizmu | −3,56 | −4,29 | różne |
+| nasza, `need_weights` | −0,37 | −0,55 | zgodne |
+| **nasza, `need_weights` + determinizm** | **+0,17** | **+0,39** | **zgodne** |
+
+### 17.2 Wniosek
+
+Odtworzenie ścieżki uwagi referencji, czyli `need_weights=True`, **zamyka resztową różnicę
+treningową**: 36,29 ± 0,51 wobec 36,12 ± 0,94 przy t = 0,39. Ma to sens konstrukcyjny, bo referencja
+wywołuje `nn.MultiheadAttention` dokładnie tak. Różnica ścigana od sekcji 11 nie była więc ani kwestią
+ziarna, ani błędem w implementacji ADCT, tylko ścieżką wykonania uwagi w bibliotece bazowej.
+
+Flagi determinizmu same nic nie dają, bo `warn_only=True` przepuszcza uwagę cuDNN. Dopiero razem
+z `need_weights=True`, które w ogóle omija SDPA, dają powtarzalność co do bitu — a zatem resztkowy
+niedeterminizm obserwowany przy samym `need_weights` pochodził z operacji, które `use_deterministic_algorithms`
+faktycznie naprawia.
+
+### 17.3 Backend math jako obserwacja osobna
+
+Wymuszenie backendu math daje 37,26 ± 0,18 na GH200 i 37,09 ± 0,57 na V100, czyli **odtwarza się na
+dwóch architekturach GPU** i przewyższa zarówno naszą konfigurację zgodną z referencją, jak i samą
+referencję, o około jeden punkt. Nie jest to konfiguracja wierna referencji i nie należy jej używać do
+odtwarzania paperu — to osobne ustalenie, że jawny matmul z softmaksem w fp32 uczy ADCT nieco lepiej
+niż którakolwiek ze ścieżek używanych przez oba kody.
