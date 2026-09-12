@@ -722,41 +722,113 @@ Obala to dwie hipotezy sprawdzane wcześniej arytmetycznie: pusty clamp w focal 
 zaokrągla się do 1,0) i przepełnienie sumy w dice. Obie dotyczyłyby fp16, a tam jest fp32 — w obu
 implementacjach jednakowo.
 
-### 13.3 Jedyna realna różnica: dtype szumu
+### 13.3 Dtype szumu: hipoteza obalona
 
 ```
 referencja:  torch.normal(0, sigma, x.shape).to(x.device)        # fp32, suma promowana do fp32
 nasza:       torch.normal(..., device=x.device, dtype=x.dtype)   # fp16, bo x jest fp16
 ```
 
-Test równoważności prowadzony był przy `noise_sigma=0`, więc tej ścieżki nie obejmował — a to ona
-według ablacji z sekcji 10 rusza Pixel-AP o około 3 punkty.
-
-A/B na bazie scenariusza 2, trzy ziarna na wariant:
+A/B na bazie scenariusza 2, po piętnaście ziaren na wariant:
 
 | wariant | I-AUROC | Pixel-AP |
 | --- | --- | --- |
-| fp16 | 80,05 ± 0,98 | 32,07 ± 2,38 |
-| fp32 | 80,90 ± 0,30 | 34,43 ± 0,71 |
+| fp16 | 79,70 ± 1,81 | 33,23 ± 2,93 |
+| fp32 | 79,97 ± 1,68 | 33,56 ± 2,29 |
 
-Efekt fp32 − fp16 wynosi +2,36 na Pixel-AP przy błędzie standardowym 1,44, czyli **t = 1,64 — poniżej
-progu istotności**. Kierunek i rząd wielkości zgadzają się ze ściganą luką (1,99), a rozrzut spada
-trzykrotnie, ale trzy ziarna na ramię nie wystarczają do rozstrzygnięcia.
+Efekt fp32 − fp16 na Pixel-AP wynosi **+0,32 przy t(14) = 0,32**, iloraz wariancji 1,64 przy
+F(14, 14) nieistotnym. Dtype szumu nie jest źródłem resztowej różnicy.
 
-### 13.4 Trening nie jest powtarzalny przy ustalonym ziarnie
+Ta sama wielkość mierzona przy rosnącej liczbie ziaren: **+2,36 (n = 3), +2,01 (n = 7), +0,32
+(n = 15)**. Dwa pierwsze oszacowania były artefaktami małej próby przy wariancji przebiegu rzędu 2,5.
+Przy n = 7 wyglądało dodatkowo, że fp16 czasem destabilizuje trening, bo dwa jego przebiegi wypadły
+poniżej 30, a fp32 żaden — przy n = 15 najgorszym przebiegiem całego zestawu okazał się jednak
+wariant fp32 (ziarno 303, Pixel-AP 26,28).
 
-Ta sama konfiguracja fp16, ten sam sprzęt, `torch.manual_seed` ustawione, dwa niezależne przebiegi:
+### 13.4 Końcowa strata treningowa przewiduje wynik
+
+Korelacja końcowej straty treningowej z Pixel-AP na trzydziestu przebiegach A/B wynosi
+**r = −0,915 przy t(12) = −7,8**. Słabe przebiegi nie są artefaktem ewaluacji — to przebiegi, które
+gorzej się zbiegły. Rozkład straty końcowej jest przy tym w obu wariantach nieodróżnialny
+(fp16 2,612 ± 0,440, fp32 2,695 ± 0,566), co niezależnie potwierdza wniosek z 13.3.
+
+Zmienna ta pozwala przewidzieć wynik przed ewaluacją: ziarno 303 w wariancie fp32 miało stratę
+końcową 4,560, najwyższą w zestawie, i dało najniższy Pixel-AP.
+
+## 14. Źródło zmienności: niedeterministyczna uwaga cuDNN
+
+### 14.1 Trening nie jest powtarzalny przy ustalonym ziarnie
+
+Ta sama konfiguracja, ten sam sprzęt, `torch.manual_seed` ustawione, dwa niezależne przebiegi:
 
 | ziarno | przebieg A | przebieg B |
 | --- | --- | --- |
 | 1 | 34,71 | 34,31 |
-| 42 | **34,95** | **29,56** |
+| 42 | 34,95 | 29,56 |
 | 111 | 33,90 | 32,35 |
 
-Przyczyną jest niedeterminizm operacji CUDA w propagacji wstecznej, kumulowany przez 50 epok.
+Ma to konsekwencję dla sekcji 11: odchylenie 0,85 wyliczone tam z pięciu ziaren opisywało zmienność
+**między ziarnami**, a nie pełną zmienność przebiegu, która sięga 2,5. Teza o „systematycznej różnicy
+2,0 punktu przy 2,6 odchylenia" była zbyt pewna.
 
-Ma to konsekwencję metodologiczną dla wcześniejszych sekcji: odchylenie 0,85 wyliczone w sekcji 11
-z pięciu ziaren opisywało zmienność **między ziarnami**, a nie pełną zmienność przebiegu, która sięga
-2,4. Teza o „systematycznej różnicy 2,0 punktu przy 2,6 odchylenia" była więc zbyt pewna. Różnica
-wobec kodu referencji pozostaje istotna także po korekcie (wariant fp32 34,43 ± 0,71 wobec 36,50 ± 0,65,
-t ≈ 4), ale każde porównanie oparte na małej liczbie przebiegów wymaga tu ostrożności.
+### 14.2 `use_deterministic_algorithms` nie wystarcza
+
+Przy `torch.use_deterministic_algorithms(True, warn_only=True)`, `cudnn.benchmark = False` i
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` powtórzenie ziarna 42 nadal się rozjeżdża: |Δ| Pixel-AP wynosi
+0,59 w fp16 i 1,98 w fp32. Logi wskazują dokładnie jedną operację:
+
+```
+cuDNN Attention defaults to a non-deterministic algorithm.
+(aten/src/ATen/native/transformers/cuda/attention_backward.cu:212)
+```
+
+`warn_only=True` ją przepuszcza, a `warn_only=False` przerwałby trening wyjątkiem zamiast go naprawić.
+
+### 14.3 Wymuszenie backendu math daje powtarzalność co do bitu
+
+```python
+torch.backends.cuda.enable_cudnn_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
+torch.backends.cuda.enable_mem_efficient_sdp(False)
+torch.backends.cuda.enable_math_sdp(True)
+```
+
+Powtórzenie ziarna 42 daje wtedy **|Δ| = 0 co do bitu** na obu metrykach i w obu wariantach szumu.
+Niedeterminizm propagacji wstecznej uwagi cuDNN był jedynym źródłem zmienności przebiegu.
+
+### 14.4 Backend math poprawia też sam wynik
+
+Sześć ziaren, konfiguracja bazowa scenariusza 2:
+
+| konfiguracja | I-AUROC | Pixel-AP |
+| --- | --- | --- |
+| domyślny backend, fp16 | 79,70 ± 1,81 | 33,23 ± 2,93 |
+| `use_deterministic_algorithms`, fp16 | 78,50 ± 2,23 | 32,56 ± 1,80 |
+| **backend math, fp16** | **82,12 ± 0,33** | **37,26 ± 0,18** |
+| **backend math, fp32** | 82,01 ± 0,29 | 37,15 ± 0,53 |
+
+Odchylenie spada dziesięciokrotnie, a Pixel-AP rośnie o cztery punkty. Izolacja jest czysta: wiersze
+drugi i trzeci różnią się **wyłącznie** backendem SDPA, więc poprawa nie pochodzi od flag
+determinizmu. Ewaluacja w obu przypadkach działa na backendzie domyślnym, więc zmiana dotyczy
+wyłącznie treningu.
+
+Wynik 37,26 ± 0,18 przewyższa liczbę referencyjną ściganą w sekcji 11 (36,50 ± 0,65). Czy backend
+poprawia tak samo kod referencji, sprawdza eksperyment `refsdp` — sześć ziaren razy dwa backendy na
+kodzie autorów.
+
+### 14.5 Krok wsteczny jest równoważny na obu ścieżkach
+
+Test równoważności rozszerzony o gradienty i o ścieżkę syntetycznych anomalii. Szum jest w niej
+wspólny dla obu implementacji: `torch.normal` podmieniony na generator CPU o ustalonym ziarnie, bo
+referencja losuje na CPU, a my na GPU, więc strumienie RNG są inaczej nieporównywalne. Batch
+mieszany, osiem anomalii i osiem obrazów normalnych — poprzedni sortował anomalie na przód, przez co
+strata syntetyczna, liczona wyłącznie na obrazach normalnych, zwracała stałe zero.
+
+| wielkość | max\|Δ\| | względna |
+| --- | --- | --- |
+| gradienty adapterów, strata segmentacyjna | 1,5e-05 | 2,2e-03 |
+| gradienty kontekstu CoOp, strata segmentacyjna | 6,7e-06 | 9,1e-06 |
+| gradienty adapterów, strata syntetyczna | 3,2e-05 | 8,9e-03 |
+| gradienty kontekstu CoOp, strata syntetyczna | 1,4e-05 | 1,0e-05 |
+
+Wszystkie ścieżki kodu są więc pokryte testem równoważności.
