@@ -832,3 +832,60 @@ strata syntetyczna, liczona wyłącznie na obrazach normalnych, zwracała stałe
 | gradienty kontekstu CoOp, strata syntetyczna | 1,4e-05 | 1,0e-05 |
 
 Wszystkie ścieżki kodu są więc pokryte testem równoważności.
+
+## 15. Mechanizm: `need_weights` i ścieżka szybka uwagi
+
+### 15.1 Kod referencji jest niewrażliwy na backend SDPA
+
+Sześć ziaren, baza scenariusza 2, kod autorów:
+
+| backend | I-AUROC | Pixel-AP |
+| --- | --- | --- |
+| domyślny | 81,78 ± 0,37 | 36,12 ± 0,94 |
+| math | 81,78 ± 0,31 | 36,47 ± 0,44 |
+
+Efekt +0,35 przy t(5) = 0,90 jest nieistotny, podczas gdy u nas ten sam zabieg dawał +4,03. Poprawa
+z sekcji 14.4 nie jest więc właściwością metody ADCT, tylko naprawą czegoś, co dotyczyło wyłącznie
+naszego stosu.
+
+### 15.2 Różnica to jeden argument słowa kluczowego
+
+```
+referencja, CLIP/transformer.py:   self.attn(q_x, k_x, v_x, need_weights=True,  attn_mask=attn_mask)
+open_clip 2.24, transformer.py:    self.attn(q_x, k_x, v_x, need_weights=False, attn_mask=attn_mask)
+```
+
+W `nn.MultiheadAttention` `need_weights=True` wymusza wolną ścieżkę, czyli jawny matmul i softmax,
+bo macierz wag trzeba zwrócić. `need_weights=False` otwiera ścieżkę szybką przez
+`scaled_dot_product_attention`, a więc uwagę cuDNN z niedeterministyczną propagacją wsteczną.
+
+Wyjaśnia to jednym mechanizmem cztery obserwacje: niewrażliwość referencji na backend, trzykrotnie
+większy rozrzut u nas, skuteczność wymuszenia backendu math oraz narastanie różnic w przód wraz
+z głębokością warstw w teście równoważności z sekcji 13.1.
+
+Nie jest to błąd w naszej implementacji ADCT — równoważność matematyczna została potwierdzona na
+wszystkich ścieżkach w sekcjach 13.1 i 14.5. To różnica biblioteki bazowej: referencja niesie własną,
+zmodyfikowaną kopię `open_clip`, my bierzemy pakiet ze źródeł.
+
+## 16. Cicha awaria przy `open_clip` 3.x
+
+Replikacja na V100 (Ares) dała I-AUROC 59,42 ± 0,36 i Pixel-AP 9,17 ± 0,35, czyli poziom przypadkowy,
+mimo powtarzalności co do bitu. Przyczyną nie jest architektura GPU, lecz wersja biblioteki:
+
+| | Helios | Ares (przed korektą) |
+| --- | --- | --- |
+| `open_clip_torch` | 2.24.0 | 3.3.0 |
+| `visual.transformer.batch_first` | brak atrybutu | `True` |
+
+W `open_clip` 3.x transformer przeszedł na układ **batch-first**, a `_embed_patches` podaje mu
+sekwencję na pierwszej osi (`permute(1, 0, 2)`, konwencja 2.x). Wymiary pozostają poprawne, więc
+`MultiheadAttention` interpretuje pozycje sekwencji jako batch i **nie zgłasza błędu** — model trenuje
+się do bezsensownego optimum. Strata końcowa 3,59 wobec 1,64 na Heliosie.
+
+Myląca jest przy tym diagnostyka: `load_openai_model` wypisuje `No pretrained weights loaded`, ale
+wagi ładuje poprawnie (`logit_scale` 4,6052 wobec 2,6593 przy losowej inicjalizacji), więc ostrzeżenie
+prowadzi na fałszywy trop.
+
+Zabezpieczenie: `build_clip_backbone` sprawdza teraz `batch_first` i przerywa z jawnym komunikatem,
+a `pyproject.toml` deklaruje grupę `vision` z ograniczeniem `open_clip_torch>=2.24,<3.0`. Wcześniej
+zależność nie była zadeklarowana w ogóle.
