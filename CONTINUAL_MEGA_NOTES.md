@@ -935,3 +935,78 @@ dwóch architekturach GPU** i przewyższa zarówno naszą konfigurację zgodną 
 referencję, o około jeden punkt. Nie jest to konfiguracja wierna referencji i nie należy jej używać do
 odtwarzania paperu — to osobne ustalenie, że jawny matmul z softmaksem w fp32 uczy ADCT nieco lepiej
 niż którakolwiek ze ścieżek używanych przez oba kody.
+
+## 18. Pełne przeliczenie benchmarku na uzgodnionej ścieżce uwagi
+
+Po ustawieniu `need_weights=True` jako domyślnego zachowania (sekcja 17) cały benchmark przeliczono od
+zera: 3 treningi bazowe, 50 treningów zadań, 50 scaleń adapterów, 53 ewaluacje, 25 ewaluacji zero-shot
+i 8 przebiegów ablacji. Wszystkie treningi z `--deterministic`, czyli powtarzalne co do bitu.
+
+### 18.1 Tabele 1–3
+
+| tabela | konfiguracja | ACC-I przed | ACC-I po | paper | ACC-P przed | ACC-P po | paper |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 5-kl., 12 zad. | 71,5 (−2,3) | 71,7 (−2,1) | 73,8 | 23,6 (−2,1) | 25,0 (−0,7) | 25,7 |
+| 1 | 10-kl., 6 zad. | 73,2 (−2,6) | 74,3 (−1,5) | 75,8 | 25,8 (−2,2) | 27,6 (−0,4) | 28,0 |
+| 1 | 30-kl., 2 zad. | 77,7 (−1,2) | 77,9 (−1,0) | 78,9 | 30,1 (−2,6) | 31,9 (−0,8) | 32,7 |
+| 2 | 5-kl., 12 zad. | 68,8 (−0,7) | 71,8 (+2,3) | 69,5 | 19,4 (−0,3) | 20,7 (+1,0) | 19,7 |
+| 2 | 10-kl., 6 zad. | 70,6 (−1,8) | 73,1 (+0,7) | 72,4 | 21,5 (−0,7) | 22,5 (+0,3) | 22,2 |
+| 2 | 30-kl., 2 zad. | 74,1 (−2,7) | 76,8 (+0,0) | 76,8 | 25,8 (−1,7) | 27,0 (−0,5) | 27,5 |
+| 3 | 5-kl., 6 zad. | 70,6 (+1,1) | 72,1 (+2,6) | 69,5 | 18,9 (−0,8) | 20,4 (+0,7) | 19,7 |
+| 3 | 10-kl., 3 zad. | 73,1 (+0,4) | 74,4 (+1,7) | 72,7 | 22,4 (−0,7) | 23,5 (+0,4) | 23,1 |
+| 3 | 30-kl., 1 zad. | 76,9 (+0,1) | 77,1 (+0,3) | 76,8 | 27,8 (−1,7) | 28,7 (−0,8) | 29,5 |
+
+Rozstrzygająca jest nie średnia, lecz rozkład znaków. Pixel-ACC: **przed — dziewięć delt na dziewięć
+ujemnych, średnia −1,42; po — pięć na dziewięć, średnia −0,09**. Prawdopodobieństwo dziewięciu znaków
+z rzędu przy braku obciążenia wynosi 0,004, więc obciążenie było realne i zniknęło. Image-ACC: średnia
+z −1,08 na +0,33. Konfiguracja 58-30 trafia dokładnie: 76,8 wobec 76,8.
+
+### 18.2 Zero-shot
+
+| scenariusz | wariant | MVTec I | MVTec P | VisA I | VisA P |
+| --- | --- | --- | --- | --- | --- |
+| 2 | nasze, 58-30 | 82,7 | 32,4 | 79,3 | 17,6 |
+| 2 | artykuł | 78,4 | 31,5 | 76,9 | 17,2 |
+| 3 | nasze, 58-30 | 69,7 | 29,3 | 66,5 | 14,1 |
+| 3 | artykuł | 75,0 | 28,4 | 69,7 | 13,7 |
+
+Pozostaje nierozstrzygnięta kwestia kolumny „(Avg.)" z sekcji 8, gdzie artykuł podaje dwie różne
+liczby zero-shot dla tego samego modelu.
+
+### 18.3 Tabela 4: wiersz pełny się zgadza, ablacja nadal nie
+
+Cztery ziarna, konfiguracja 58-30:
+
+| wariant | mieszanie | ACC-I | ACC-P | FM-I | FM-P |
+| --- | --- | --- | --- | --- | --- |
+| pełny | tak | 76,0 ± 0,4 | 27,6 ± 0,2 | 1,2 | 2,4 |
+| pełny | nie | 75,5 ± 0,9 | 28,7 ± 0,6 | 6,6 | 9,5 |
+| bez syntetycznych | tak | 78,7 ± 0,5 | 31,2 ± 0,1 | 1,6 | 1,7 |
+| bez syntetycznych | nie | 77,0 ± 0,2 | 30,7 ± 0,6 | 7,1 | 9,4 |
+
+Wiersz pełny odtwarza artykuł (76,0 wobec 76,3 na obrazie, 27,6 wobec 26,8 na pikselach), co
+potwierdza poprawność konfiguracji i pomiaru. Ablacja natomiast **idzie w przeciwną stronę niż
+raportowana**: usunięcie syntetycznych anomalii daje **+3,58 Pixel-ACC przy t(3) = 29,4**, podczas gdy
+artykuł raportuje −4,5. Po uzgodnieniu ścieżki uwagi odchylenia spadły do 0,1–0,2, więc efekt jest
+jednoznaczny — wcześniejsze pomiary dawały +2,8 (nasz kod) i +3,1 (kod autorów) przy odchyleniach
+0,3–0,9.
+
+Kolumny zero-shot Tabeli 4 potwierdzają to samo:
+
+| wiersz | MVTec P nasze | paper | VisA P nasze | paper |
+| --- | --- | --- | --- | --- |
+| pełny | 33,5 ± 0,8 | 32,1 | 18,4 ± 0,6 | 18,8 |
+| bez Mixture | 33,3 ± 1,1 | 35,7 | 17,2 ± 1,5 | 19,7 |
+| bez Synthetic | 40,7 ± 1,2 | 26,3 | 22,9 ± 1,0 | 13,9 |
+
+Wiersze pełny i bez Mixture zgadzają się z artykułem w granicach 1–2,5 punktu, a wiersz bez Synthetic
+rozjeżdża się o 14,4 i 9,0 punktu — i to w kierunku przeciwnym. Teza artykułu, że synteza anomalii jest
+kluczowa dla jakości lokalizacji, nie zachodzi w żadnej z dwóch implementacji ani przed, ani po
+uzgodnieniu ścieżki uwagi.
+
+### 18.4 Luka w manifeście ewaluacji
+
+Manifest zawierał 52 pozycje przy 53 konfiguracjach — brakowało wiersza `2 30 0 base`. Scenariusze 1
+i 3 miały swój wiersz bazowy, scenariusz 2 nie. Wcześniejszy `s2_base.json` pochodził z osobnych
+ewaluacji w `extra/`, które mierzą tę samą konfigurację, więc liczby były poprawne, ale brały się
+z innego źródła niż reszta tabeli. Manifest uzupełniono.
