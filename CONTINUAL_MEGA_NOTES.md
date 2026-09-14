@@ -1010,3 +1010,36 @@ Manifest zawierał 52 pozycje przy 53 konfiguracjach — brakowało wiersza `2 3
 i 3 miały swój wiersz bazowy, scenariusz 2 nie. Wcześniejszy `s2_base.json` pochodził z osobnych
 ewaluacji w `extra/`, które mierzą tę samą konfigurację, więc liczby były poprawne, ale brały się
 z innego źródła niż reszta tabeli. Manifest uzupełniono.
+
+## 19. Ablacja syntetycznych anomalii: obie implementacje zgodne ze sobą, obie niezgodne z artykułem
+
+Powtórzenie sekcji 10 na **wspólnym ewaluatorze** (po uzgodnieniu ścieżki uwagi) i **po cztery ziarna
+na wariant** w obu implementacjach. Konfiguracja 58-30, scenariusz 2.
+
+| implementacja | wariant | ACC-I | ACC-P |
+| --- | --- | --- | --- |
+| kod autorów | z Synthetic | 76,1 ± 0,3 | 27,6 ± 0,8 |
+| kod autorów | bez Synthetic | 78,4 ± 0,4 | 30,8 ± 0,1 |
+| nasz kod | z Synthetic | 76,0 ± 0,4 | 27,6 ± 0,2 |
+| nasz kod | bez Synthetic | 78,7 ± 0,5 | 31,2 ± 0,1 |
+
+Efekt usunięcia syntezy anomalii:
+
+| źródło | Image ACC | Pixel ACC |
+| --- | --- | --- |
+| kod autorów | +2,25 (t(3) = 8,7) | **+3,19 (t(3) = 8,1)** |
+| nasz kod | +2,68 (t(3) = 6,3) | **+3,58 (t(3) = 29,4)** |
+| artykuł, Tabela 4 | — | **−4,5** |
+
+Obie implementacje zgadzają się ze sobą na obu wierszach: 27,6 wobec 27,6 na wariancie pełnym i 30,8
+wobec 31,2 na wariancie bez syntetycznych. Wiersz pełny odtwarza przy tym artykuł (76,1 i 76,0 wobec
+76,3; 27,6 wobec 26,8), co wyklucza błąd konfiguracji lub pomiaru po którejkolwiek ze stron.
+
+Rozbieżność dotyczy **wyłącznie wiersza bez syntetycznych** i ma przeciwny znak niż raportowany.
+Ponieważ kod autorów zachowuje się tak samo jak nasz, sprawa nie jest kwestią naszej implementacji
+i zostaje zamknięta jako niezgodność artykułu z własnym kodem.
+
+Drobna asymetria godna odnotowania: w kodzie autorów wariant bez syntetycznych realizowany jest przez
+wyzerowanie wagi członu (`SYNTH_WEIGHT=0.0`), więc ścieżka szumu nadal się wykonuje i pobiera liczby
+ze strumienia RNG; u nas `use_synthetic_anomalies=False` pomija ją w całości. Matematyka jest
+równoważna, ale konkretne ziarna nie są porównywalne między implementacjami — i nigdy nie były.
