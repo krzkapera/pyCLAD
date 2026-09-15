@@ -1,18 +1,18 @@
-import numpy as np
-
 from pyclad.metrics.continual.concepts_metric import (
     ConceptLevelMatrix,
     SummarizedMetric,
+    validate_square_matrix,
+)
+from pyclad.metrics.continual.schedule_aware_forgetting_measure import (
+    ScheduleAwareForgettingMeasure,
 )
 
 
 class ForgettingMeasureStrict(SummarizedMetric):
     def compute(self, metric_matrix: ConceptLevelMatrix) -> float:
-        if len(metric_matrix) < 2:
-            return 0
-        values = np.asarray(metric_matrix, dtype=float)
-        best_before_last = np.nanmax(values[:-1, :-1], axis=0)
-        return float(np.nanmean(best_before_last - values[-1, :-1]))
+        validate_square_matrix(metric_matrix, self.name())
+        steps = range(len(metric_matrix))
+        return ScheduleAwareForgettingMeasure().compute(metric_matrix, list(steps))
 
     def name(self) -> str:
         return "ForgettingMeasureStrict"

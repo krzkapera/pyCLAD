@@ -6,7 +6,7 @@ from pyclad.callbacks.evaluation.grouped_concept_metric_evaluation import (
 )
 from pyclad.callbacks.evaluation.time_evaluation import TimeEvaluationCallback
 from pyclad.metrics.base.roc_auc import RocAuc
-from pyclad.metrics.continual.average_accuracy import AverageAccuracy
+from pyclad.metrics.continual.final_step_average import FinalStepAverage
 from pyclad.metrics.continual.forgetting_measure_strict import ForgettingMeasureStrict
 from pyclad.output.json_writer import JsonOutputWriter
 from pyclad.scenarios.concept_incremental import ConceptIncrementalScenario
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     strategy = NaiveStrategy(model)
 
     groups = dataset.group_by_concept()
-    summarized_metrics = [AverageAccuracy(), ForgettingMeasureStrict()]
+    summarized_metrics = [FinalStepAverage(), ForgettingMeasureStrict()]
     callbacks = [
         GroupedConceptMetricCallback(RocAuc(), groups, summarized_metrics),
         GroupedVisionPixelConceptMetricCallback(PixelAveragePrecision(), groups, summarized_metrics),

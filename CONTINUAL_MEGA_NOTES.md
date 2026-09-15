@@ -139,7 +139,7 @@ base to 60% zbioru testowego i tak jest liczona w każdym etapie. Za tę oszczę
 `NaN` do macierzy i przerobić `ContinualAverage` oraz `ForwardTransfer`, więc zostawiamy pełną macierz.
 Górny trójkąt to wyniki zero-shot na klasach jeszcze nienauczonych, więc `ForwardTransfer` działa gratis.
 
-`AverageAccuracy` i `ForgettingMeasureStrict` liczone są wyłącznie na kwadratowej podmacierzy grup
+`FinalStepAverage` i `ForgettingMeasureStrict` liczone są wyłącznie na kwadratowej podmacierzy grup
 uczonych — grupy zero-shot trafiają do osobnej sekcji `held_out_columns`.
 
 ### 3.4 Nadzorowany trening jako równoległy kontrakt
@@ -270,7 +270,7 @@ Syntetyczny zbiór odwzorowujący layout ContinualAD (obie konwencje nazw masek,
 katalogów) plus pliki meta dla scenariuszy 1–3 i zbiory zero-shot. 18 asercji, wszystkie przechodzą:
 odkrywanie klas, rozmiary splitu few-shot, rozwiązywanie masek, determinizm splitu, etykiety i maski
 na koncepcie treningowym, dyspozycja do `fit_supervised` vs `fit`, kolejność grup, wydzielenie grup
-zero-shot oraz zgodność `AverageAccuracy` i `ForgettingMeasureStrict` z wartościami policzonymi ręcznie
+zero-shot oraz zgodność `FinalStepAverage` i `ForgettingMeasureStrict` z wartościami policzonymi ręcznie
 z macierzy grupowej.
 
 ### 5.2 Przebieg na realnych danych
