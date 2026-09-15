@@ -9,15 +9,17 @@ from pyclad.metrics.base.roc_auc import RocAuc
 from pyclad.metrics.continual.final_step_average import FinalStepAverage
 from pyclad.metrics.continual.forgetting_measure_strict import ForgettingMeasureStrict
 from pyclad.output.json_writer import JsonOutputWriter
-from pyclad.scenarios.concept_incremental import ConceptIncrementalScenario
-from pyclad.strategies.baselines.naive import NaiveStrategy
+from pyclad.scenarios.supervised_concept_incremental import (
+    SupervisedConceptIncrementalScenario,
+)
 from pyclad.vision.callbacks.grouped_vision_pixel_concept_metric_callback import (
     GroupedVisionPixelConceptMetricCallback,
 )
 from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaBenchmarkReader
 from pyclad.vision.metrics.pixel_average_precision import PixelAveragePrecision
-from pyclad.vision.models.fastflow.config import FastFlowConfig
-from pyclad.vision.models.fastflow.fastflow import FastFlow
+from pyclad.vision.models.adct.adct import Adct
+from pyclad.vision.models.adct.config import AdctConfig
+from pyclad.vision.strategies.naive_supervised import NaiveSupervisedStrategy
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,20 +30,19 @@ if __name__ == "__main__":
         scenario=2,
         task_size=30,
         zero_shot=True,
-        train_samples="normal",
+        train_samples="all",
     )
     dataset = reader.read_dataset()
 
-    model = FastFlow(
-        FastFlowConfig(
-            input_size=(336, 336),
-            backbone_name="resnet18",
-            batch_size=16,
-            epochs=20,
+    model = Adct(
+        AdctConfig(
+            weights_path=pathlib.Path("../../resources/vision/clip/ViT-L-14-336px.pt"),
+            epochs=50,
+            train_batch_size=16,
             learning_rate=1e-4,
         )
     )
-    strategy = NaiveStrategy(model)
+    strategy = NaiveSupervisedStrategy(model)
 
     groups = dataset.group_by_concept()
     summarized_metrics = [FinalStepAverage(), ForgettingMeasureStrict()]
@@ -51,6 +52,6 @@ if __name__ == "__main__":
         TimeEvaluationCallback(),
     ]
 
-    ConceptIncrementalScenario(dataset=dataset, strategy=strategy, callbacks=callbacks).run()
+    SupervisedConceptIncrementalScenario(dataset=dataset, strategy=strategy, callbacks=callbacks).run()
 
     JsonOutputWriter(pathlib.Path("output.json")).write([model, dataset, strategy, *callbacks])
