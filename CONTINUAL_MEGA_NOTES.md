@@ -1043,3 +1043,60 @@ Drobna asymetria godna odnotowania: w kodzie autorów wariant bez syntetycznych 
 wyzerowanie wagi członu (`SYNTH_WEIGHT=0.0`), więc ścieżka szumu nadal się wykonuje i pobiera liczby
 ze strumienia RNG; u nas `use_synthetic_anomalies=False` pomija ją w całości. Matematyka jest
 równoważna, ale konkretne ziarna nie są porównywalne między implementacjami — i nigdy nie były.
+
+## 20. Tabele 1–3 z odchyleniami: cztery ziarna
+
+Sekcja 18.1 podawała liczby z **jednego** przebiegu na konfigurację. Okazały się mylące, więc cały
+benchmark przeliczono na czterech ziarnach (2025, 7, 13, 21 — po 53 ewaluacje każde, wszystkie
+zweryfikowane co do liczby konceptów). Ziarna 2025, 7 i 21 liczone na GH200, ziarno 13 na V100.
+
+| tabela | konfiguracja | ACC-I artykuł | ACC-I nasze | Δ | ACC-P artykuł | ACC-P nasze | Δ |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 5-kl. (12) | 73,8 | 72,1 ± 0,9 | −1,7 | 25,7 | 24,9 ± 0,4 | −0,8 |
+| 1 | 10-kl. (6) | 75,8 | 74,2 ± 0,6 | −1,6 | 28,0 | 27,2 ± 0,6 | −0,8 |
+| 1 | 30-kl. (2) | 78,9 | 78,0 ± 0,3 | −0,9 | 32,7 | 32,2 ± 0,5 | −0,5 |
+| 2 | 5-kl. (12) | 69,5 | 69,6 ± 1,5 | +0,1 | 19,7 | 20,1 ± 0,6 | +0,4 |
+| 2 | 10-kl. (6) | 72,4 | 71,4 ± 1,1 | −1,0 | 22,2 | 22,1 ± 0,5 | −0,1 |
+| 2 | 30-kl. (2) | 76,8 | 76,0 ± 0,5 | −0,8 | 27,5 | 27,2 ± 0,3 | −0,3 |
+| 3 | 5-kl. (6) | 69,5 | 70,4 ± 1,1 | +0,9 | 19,7 | 20,0 ± 0,4 | +0,3 |
+| 3 | 10-kl. (3) | 72,7 | 73,3 ± 0,9 | +0,6 | 23,1 | 23,2 ± 0,3 | +0,1 |
+| 3 | 30-kl. (1) | 76,8 | 77,0 ± 0,6 | +0,2 | 29,5 | 29,1 ± 0,4 | −0,4 |
+
+Test t jednopróbkowy wobec wartości z artykułu, df = 3, próg |t| > 3,182:
+
+| konfiguracja | ACC-I Δ | t | ACC-P Δ | t |
+| --- | --- | --- | --- | --- |
+| s1 5-kl. | −1,66 | **−3,66** | −0,76 | **−4,02** |
+| s1 10-kl. | −1,56 | **−4,89** | −0,82 | −2,67 |
+| s1 30-kl. | −0,87 | **−5,85** | −0,53 | −2,24 |
+| s2 5-kl. | +0,14 | 0,18 | +0,41 | 1,27 |
+| s2 10-kl. | −0,95 | −1,71 | −0,07 | −0,28 |
+| s2 30-kl. | −0,76 | −2,86 | −0,35 | −2,13 |
+| s3 5-kl. | +0,92 | 1,65 | +0,30 | 1,56 |
+| s3 10-kl. | +0,62 | 1,40 | +0,12 | 0,82 |
+| s3 30-kl. | +0,20 | 0,64 | −0,41 | −2,05 |
+
+**Istotne są 4 delty z 18, wszystkie w scenariuszu 1 i wszystkie ujemne.** Scenariusze 2 i 3 są
+w pełni zgodne z artykułem: dziewięć na dziewięć delt nieistotnych, największa co do modułu −1,0.
+
+### 20.1 Korekta wobec sekcji 18
+
+Liczby z jednego przebiegu były zbyt optymistyczne i nie należy się na nie powoływać:
+
+| twierdzenie z sekcji 18 | wartość z 1 przebiegu | wartość z 4 ziaren |
+| --- | --- | --- |
+| s2 30-kl. „trafia co do dziesiętnej" | +0,0 | −0,8 (t = −2,86) |
+| s2 5-kl. ACC-I | +2,3 | +0,1 (t = 0,18) |
+| s3 5-kl. ACC-I | +2,6 | +0,9 (t = 1,65) |
+
+Odchylenie ACC-I w scenariuszach 2 i 3 sięga 1,5 punktu, więc pojedynczy przebieg mógł wylosować
+niemal dowolną z tych wartości. Wnioski oparte na Pixel-ACC pozostają w mocy, bo tam odchylenia
+wynoszą 0,3–0,6.
+
+### 20.2 Co pozostaje otwarte
+
+Scenariusz 1 wypada konsekwentnie niżej od artykułu na Image-ACC we wszystkich trzech konfiguracjach
+(−1,66, −1,56, −0,87; t od −3,66 do −5,85). Jest to jedyna systematyczna różnica pozostała
+w Tabelach 1–3 po uzgodnieniu ścieżki uwagi. Scenariusz 1 wyróżnia się tym, że jego zbiór bazowy
+zawiera MVTec i VisA, których nie ma w bazach scenariuszy 2 i 3 — to pierwszy kierunek do sprawdzenia.
+Nie badano.
