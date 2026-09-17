@@ -1,0 +1,1119 @@
+# Continual-MEGA w pyCLAD — notatki implementacyjne
+
+Dziennik decyzji, znalezionych błędów i odstępstw od referencji.
+
+Referencje:
+- paper: *Continual-MEGA: A Large-scale Benchmark for Generalizable Continual Anomaly Detection* (Neurocomputing 700, 2026)
+- kod: https://github.com/Continual-Mega/Continual-MEGA-Baseline
+- dane: https://huggingface.co/datasets/Continual-Mega/Continual-MEGA-Benchmark
+
+Model bazowy jest celowo poza zakresem — implementujemy sam benchmark.
+
+---
+
+## 1. Błędy i niespójności znalezione w referencji
+
+### 1.1 `eval_continual.py` zapisuje same zera
+
+```python
+results_image = np.full((num_tasks, num_tasks), 0)   # dtype int64
+...
+results_image[args.task_id, i] = img_auc_mean        # 0.85 -> 0
+```
+
+Macierz wyników jest tworzona jako `int64`, więc przypisanie AUROC/AP obcina każdą wartość do zera i taki
+CSV trafia do `calculate_metrics.py`. `train_continual.py` używa w tym samym miejscu `np.nan` (float), więc
+ścieżka treningowa jest poprawna — błąd dotyczy wyłącznie samodzielnej ewaluacji z checkpointów.
+
+Nie odtwarzamy tego zachowania.
+
+### 1.2 `cls_name` w próbce nie zgadza się z kluczem klasy
+
+W `meta_files/*.json` klucz słownika jest prefiksowany nazwą zbioru (`mvtec_leather`, `visa_pcb4`,
+`btad_03`, `mpdd_connector`), ale pole `cls_name` wewnątrz próbki dla części zbiorów jest gołe
+(`leather`, `pcb4`, `03`, `connector`), a dla części prefiksowane (`continual_ad_*`, `real_iad_*`,
+`viaduct_*`). Tożsamość klasy bierzemy wyłącznie z klucza słownika; pole `cls_name` jest ignorowane.
+
+### 1.3 Brak meta dla zero-shot na VisA
+
+Paper raportuje zero-shot na MVTec-AD **i** VisA (Tab. 2 i 3), ale repozytorium zawiera tylko
+`meta_files/meta_mvtec.json`. Zbiór testowy VisA budujemy z indeksu katalogu przez istniejący
+`VisABenchmarkReader` (split `split_csv/1cls.csv`) — patrz §3.7.
+
+### 1.4 `meta_mvtec.json` ma inny katalog bazowy niż pliki strumienia
+
+Ścieżki w plikach scenariuszowych są względne wobec katalogu z wszystkimi zbiorami
+(`continual_ad/...`, `mvtec_anomaly_detection/...`), natomiast w `meta_mvtec.json` są względne wobec
+samego katalogu MVTec (`bottle/test/...`) — zgodnie z `eval_zero.sh`, które podaje
+`--data_root data/mvtec_anomaly_detection`. Obsługujemy oba korzenie osobno.
+
+### 1.5 Kolejność klas nie jest zagnieżdżona między rozmiarami zadań
+
+Dla tego samego scenariusza strumienie 5-, 10- i 30-klasowe mają **różną** kolejność klas (sprawdzone:
+żadna para nie jest permutacją blokową drugiej). Nie da się ich wyprowadzić z jednej listy — pliki meta
+są jedynym źródłem prawdy.
+
+### 1.6 Splity treningowe nie są spójne między scenariuszami
+
+Dla 30 klas wspólnych dla base scenariusza 1 i 2 **żadna** nie ma tego samego zestawu 20 obrazów
+treningowych. W obrębie jednego scenariusza train i test są rozłączne, ale obraz treningowy z S1 bywa
+obrazem testowym w S2. Wniosek: ContinualAD nie ma kanonicznego splitu — patrz §4.1.
+
+### 1.7 Tabela A nie sumuje się do własnych wartości zbiorczych
+
+Liczby per klasa w Tab. A są dla **każdej** klasy o 10 niższe od rzeczywistych — zarówno dla obrazów
+normalnych, jak i anomalnych (Apple 490/502 w tabeli vs 500/512 w danych, Ruler 277/490 vs 287/500,
+Energy-bar 329/542 vs 339/552, i tak dla wszystkich 30 klas). Wygląda to na liczności *zbioru testowego*,
+czyli po odjęciu 10 normalnych i 10 anomalnych obrazów treningowych.
+
+Kolumny tabeli nie sumują się więc do wartości podanych w jej własnym tekście: 14 355 vs deklarowane
+14 655 obrazów normalnych (różnica to dokładnie 30 klas × 10). Rzeczywiste sumy z plików meta to
+14 655 normalnych i 15 826 anomalnych — pierwsza zgadza się z deklaracją, druga jest o 1 mniejsza niż
+podane 15 827.
+
+Zweryfikowane na Heliosie: dla 10 pobranych klas zawartość dysku pokrywa się z plikami meta co do
+obrazu (0 ścieżek z meta nieobecnych na dysku, 0 obrazów na dysku nieujętych w meta).
+
+### 1.8 Layout ContinualAD jest niejednorodny
+
+Katalogi anomalii zawierają warianty i literówki nazw defektów: `missing part`, `missing_part`,
+`misisng part`, `crack`, `crack1`, `crack2`. Maski występują w dwóch konwencjach — `<stem>.png` oraz
+`mask_<stem>.png` — a katalog urządzenia bywa pominięty (ok. 3 000 z 59 000 obrazów anomalnych ma
+ścieżkę `anomaly/<defekt>/<plik>` zamiast `anomaly/<defekt>/<urządzenie>/<plik>`). W archiwach na
+HuggingFace w katalogach anomalii siedzą dodatkowo pliki `.DS_Store`.
+
+Dla nas to bez znaczenia: ścieżki do obrazów i masek bierzemy wprost z plików meta, nie ze skanowania
+katalogów. Notujemy, bo każdy reader oparty na przechodzeniu drzewa katalogów musi te warianty
+obsłużyć.
+
+---
+
+## 2. Błędy znalezione w pyCLAD (nienaprawione)
+
+### 2.1 Literówka w kluczu `tran_concepts_no`
+
+`ConceptsDataset.additional_info()` zwraca `{"tran_concepts_no": ...}` zamiast `train_concepts_no`.
+Klucz trafia do `output.json`, więc poprawka zepsułaby parsowanie istniejących wyników. Zostawiamy,
+zgłaszamy osobno.
+
+---
+
+## 3. Odstępstwa wymuszone przez architekturę pyCLAD
+
+### 3.1 Koncepty treningowe to grupy, testowe to klasy
+
+Referencja utrzymuje dwa poziomy granulacji: strumień przychodzi grupami (base, task_1 … task_N), ale
+metryka to **średnia po klasach** wewnątrz grupy, liczona z osobnym `DataLoader`em na klasę.
+
+`ConceptsDataset` nie wymaga zgodności list train i test, więc odwzorowujemy to wprost:
+`train_concepts` = grupy, `test_concepts` = pojedyncze klasy. Mapowanie klasa → grupa wystawia
+`ContinualMegaDataset.group_by_concept()`, a `GroupedConceptMetricCallback` składa z niego macierz
+grupową, uśredniając w grupie.
+
+To jednocześnie rozwiązuje problem pamięci: mediana klasy testowej ma 250 obrazów, największa
+(`real_iad_mint`) 5 285, więc szczyt to ~2,4 GB map anomalii zamiast ~52 GB dla całej grupy base.
+
+`GroupedConceptMetricCallback` i jego wariant pikselowy są osobnymi klasami, niezależnymi od
+`ConceptMetricCallback` i `VisionPixelConceptMetricCallback`: budują macierz **grup**, nie konceptów,
+więc jeden koncept treningowy może obejmować wiele testowych. Wariant pikselowy dziedziczy po obrazowym
+i nadpisuje wyłącznie odczyt wartości.
+
+Rozważaliśmy wpięcie grupowania w istniejące klasy (haki na wartość i na kolumnę w
+`ConceptMetricCallback`, wariant pikselowy przez MRO). Wychodziło o ~120 linii mniej i usuwało
+duplikację, która jest w projekcie od wcześniej, ale wymagało przebudowy dwóch klas publicznych.
+Wybraliśmy izolację kosztem powtórzenia: klasy z `main` zostają nietknięte.
+
+### 3.2 Leniwe budowanie konceptów
+
+Zbiór testowy scenariusza 1 to 193 258 obrazów. Zmaterializowany na raz to ~65 GB obrazów i ~22 GB
+masek, przy czym `build_concepts_dataset_from_samples` ładował maski niezależnie od `data_mode`.
+`LazyVisionConceptList` buduje koncept dopiero przy iteracji i nie trzyma go, więc w pamięci żyje jeden
+koncept naraz. Kosztem jest ponowne dekodowanie obrazów i masek w każdym etapie — pomijalne wobec
+1,35 mln przebiegów modelu.
+
+### 3.3 Pełna macierz zamiast dolnej trójkątnej
+
+Referencja liczy tylko `M[i][j]` dla `j ≤ i`; pyCLAD ocenia wszystkie koncepty po każdym etapie.
+Zmierzone dla scenariusza 1 / 10 klas: 1 352 806 vs 1 117 708 inferencji, czyli **17%** różnicy — grupa
+base to 60% zbioru testowego i tak jest liczona w każdym etapie. Za tę oszczędność trzeba by wpuścić
+`NaN` do macierzy i przerobić `ContinualAverage` oraz `ForwardTransfer`, więc zostawiamy pełną macierz.
+Górny trójkąt to wyniki zero-shot na klasach jeszcze nienauczonych, więc `ForwardTransfer` działa gratis.
+
+`FinalStepAverage` i `ForgettingMeasureStrict` liczone są wyłącznie na kwadratowej podmacierzy grup
+uczonych — grupy zero-shot trafiają do osobnej sekcji `held_out_columns`.
+
+### 3.4 Nadzorowany trening jako równoległy kontrakt
+
+`Model.fit(data)` i `Strategy.learn(data)` nie przenoszą etykiet ani masek, a benchmark trenuje na
+10 normalnych + 10 anomalnych obrazach z maskami pikselowymi. Rozszerzenie istniejących sygnatur
+wywróciłoby `der.learn`, `agem.learn`, `mste.learn` (brak `**kwargs`) oraz wszystkie 8 implementacji
+`fit`, w tym modele spoza repozytorium.
+
+Rozwiązanie: **czwarty kontrakt strumienia**, dokładnie tak, jak projekt już rozwiązuje ten problem.
+pyCLAD ma jedno ABC strategii na rodzaj strumienia (`ConceptAwareStrategy`, `ConceptIncrementalStrategy`,
+`ConceptAgnosticStrategy`), każde z własną sygnaturą `learn`, i jeden scenariusz mówiący tym kontraktem.
+Nadzór to kolejna oś tego samego podziału, więc dokładamy `SupervisedStrategy.learn(concept)` oraz
+`SupervisedConceptIncrementalScenario`.
+
+Klasa bazowa `Strategy` nie deklaruje `learn` w ogóle, więc nowa sygnatura z niczym nie koliduje.
+`strategy.py` i istniejące scenariusze zostają nietknięte — zero różnic względem `main`. Ceną jest
+skopiowana pętla `run()` (~25 linii), ale `concept_incremental.py` i `concept_aware.py` już dziś różnią
+się między sobą tylko dwoma wywołaniami, więc czwarta kopia jest zgodna z konwencją projektu, a nie
+nowym zapachem.
+Po stronie modeli `SupervisedModel` (rdzeń) deklaruje `fit(data, labels)` i jest **rodzeństwem**
+`Model`, nie jego podtypem — `fit(data)` i `fit(data, labels)` to różne kontrakty, a model nadzorowany
+nie może wystąpić tam, gdzie oczekiwany jest nienadzorowany. Kosztem jest powtórzenie deklaracji
+`predict`/`name`/`info`; alternatywą byłoby wydzielenie wspólnej bazy bez `fit`, czyli zmiana
+istniejącego `Model`.
+
+Maski są sygnałem pikselowym, więc nie ma ich w rdzeniu. `SupervisedVisionModel` dokłada je w warstwie
+vision jako `fit(data, labels, masks=None)` i **jest** podtypem `SupervisedModel`, bo parametr
+opcjonalny nie zawęża kontraktu.
+
+`NaiveSupervisedStrategy` implementuje `SupervisedStrategy.learn(concept)` i woła
+`fit(data, labels, masks)`. `SupervisionRequiredError` zostaje na jeden przypadek: koncept bez etykiet.
+Wcześniejsza wersja musiała dodatkowo zaślepiać odziedziczone `learn(data)` — przy własnym ABC nie ma
+czego zaślepiać.
+
+Strategia dostaje `Concept`, bo tylko ona wie, czy koncept niesie maski; model dostaje tablice.
+
+### 3.5 `ImageLoadOptions` zamiast `validate_read_options`
+
+Parametry ładowania obrazu urosły z trzech do pięciu (doszły `interpolation` i `apply_exif_transpose`)
+i wędrują przez cztery warstwy. Zamiast przepychać pięć argumentów zebrane są w zamrożoną
+`ImageLoadOptions`, która waliduje się sama w `__post_init__`. Funkcja `validate_read_options` znika,
+a `materialize_samples` i `_load_image` przyjmują jeden obiekt zamiast listy parametrów.
+
+Publiczne `read_vision_dataset` / `read_dataset` zachowują dotychczasowe argumenty.
+
+### 3.6 Zero-shot bez osobnego callbacku
+
+Koncepty MVTec-AD i VisA są dodane do `test_concepts`, ale nie do `train_concepts`. Scenariusz ocenia je
+po każdym etapie bez żadnej zmiany kodu, a `GroupedConceptMetricCallback` rozpoznaje grupy, które nigdy
+nie wystąpiły jako nauczone, i raportuje je w `held_out_columns`. Callback z referencją do strategii
+okazał się niepotrzebny.
+
+Zero-shot jest odrzucany dla scenariusza 1, bo MVTec-AD i VisA są tam częścią strumienia treningowego.
+
+### 3.7 VisA zero-shot z indeksu katalogu
+
+Wobec braku pliku meta (§1.3) zbiór testowy VisA powstaje z `VisABenchmarkReader` — wszystkie wiersze
+`split_csv/1cls.csv` z `split == test`. Nazwy konceptów prefiksujemy (`visa_<klasa>`, `mvtec_<klasa>`),
+zgodnie z konwencją plików strumienia; w scenariuszach 2 i 3 nie ma kolizji, bo oba zbiory są wyłączone
+ze strumienia.
+
+---
+
+## 4. Decyzje projektowe
+
+### 4.1 Zakres: tylko benchmark, bez samodzielnego ContinualAD
+
+ContinualAD jest udostępniany jako osobny zbiór, ale nie ma kanonicznego splitu train/test (§1.6), więc
+użycie go poza benchmarkiem wymagałoby wymyślenia własnego podziału. Zrezygnowaliśmy z tego: jedynym
+wejściem jest `ContinualMegaBenchmarkReader`, który bierze ścieżki z plików meta. Zbudowany wcześniej
+`ContinualADBenchmarkReader` (split few-shot 10+10 seedowany po `crc32`) został usunięty.
+
+Przy okazji: w `pyclad/vision/data/benchmarks/` słowo „benchmark" oznacza „znany publiczny zbiór o
+znanym layoucie na dysku" (`MVTecBenchmarkReader`, `VisABenchmarkReader`, …), a nie protokół ewaluacji.
+`ContinualMegaBenchmarkReader` jest jedyną klasą w tym module, która czyta benchmark w sensie paperu —
+protokół plus dane — i dlatego świadomie nie dziedziczy po `VisionBenchmarkReader`, którego kontrakt
+(`index_samples` z limitami per kategoria) opisuje czytanie zbioru danych, nie scenariusza.
+
+### 4.2 EXIF
+
+ContinualAD to zdjęcia z 10 telefonów, więc obrazy niosą tagi orientacji EXIF. Referencyjny
+`dataset/continual.py` woła `ImageOps.exif_transpose` **tylko na obrazie**, nie na masce — maski są już
+zapisane w orientacji po transpozycji. Odtwarzamy to dokładnie: `_load_image` transponuje, ładowanie
+masek nie.
+
+Włączenie tego globalnie po cichu zmieniłoby wyniki istniejących użytkowników, więc domyślnie
+`apply_exif_transpose=False`, a `ContinualMegaDataset` i przykład dla ContinualAD włączają je jawnie.
+
+### 4.3 Interpolacja
+
+Referencja skaluje obrazy BICUBIC, maski NEAREST. pyCLAD używał BILINEAR dla obrazów (maski już były
+NEAREST). Globalna wartość domyślna zostaje BILINEAR, `ContinualMegaDataset` ustawia BICUBIC.
+
+### 4.4 `train_samples`
+
+`ContinualMegaDataset(train_samples="all")` odtwarza benchmark (10+10 z maskami) i wymaga modelu
+nadzorowanego. `train_samples="normal"` odfiltrowuje anomalie, żeby dało się uruchomić benchmark
+z istniejącymi modelami pyCLAD (PaSTe, FastFlow). Bez tego przełącznika model one-class dostałby
+anomalie oznaczone jako dane treningowe i uczyłby się ich jako normalności.
+
+### 4.5 `nanmean` w makro-średniej
+
+`PixelAveragePrecision` zwraca `NaN`, gdy klasa nie ma dodatnich pikseli. W plikach meta taka klasa nie
+występuje (sprawdzone: 0 klas testowych z jedną etykietą, 0 anomalii bez maski), ale uśrednianie w grupie
+używa `nanmean`, żeby pojedyncza zdegenerowana klasa nie wyzerowała całej grupy.
+
+### 4.6 Brak konwertera do manifestu CSV
+
+`ContinualMegaDataset` czyta pliki meta wprost. Konwersja do manifestu pyCLAD (`*_samples.csv`) miałaby
+sens dopiero przy hostowaniu specyfikacji obok danych — odłożone razem z tematem pobierania dużych
+plików.
+
+---
+
+## 5. Pomiary na Heliosie (Cyfronet)
+
+Środowisko: partycja `plgrid-gpu-gh200`, NVIDIA GH200 120GB (aarch64), Python 3.11.5,
+torch 2.11.0+cu128. Wszystkie dane, cache i wyniki w `$SCRATCH/continual-mega/`.
+
+Uwaga techniczna: węzły logowania są x86_64, a węzły GPU aarch64, więc venv zbudowany na loginie tam
+nie działa. Zadania wymagają `--export=NONE`, inaczej `MODULEPATH` odziedziczony z loginu każe
+`module load Python` wybrać build x86_64.
+
+### 5.1 Smoke test
+
+Syntetyczny zbiór odwzorowujący layout ContinualAD (obie konwencje nazw masek, obie głębokości
+katalogów) plus pliki meta dla scenariuszy 1–3 i zbiory zero-shot. 18 asercji, wszystkie przechodzą:
+odkrywanie klas, rozmiary splitu few-shot, rozwiązywanie masek, determinizm splitu, etykiety i maski
+na koncepcie treningowym, dyspozycja do `fit_supervised` vs `fit`, kolejność grup, wydzielenie grup
+zero-shot oraz zgodność `FinalStepAverage` i `ForgettingMeasureStrict` z wartościami policzonymi ręcznie
+z macierzy grupowej.
+
+### 5.2 Przebieg na realnych danych
+
+10 klas ContinualAD (18 GB) jako strumień 10 konceptów, FastFlow z backbonem resnet18, obrazy 256×256,
+200 obrazów normalnych na klasę do treningu, 10 epok, strategia `NaiveStrategy`.
+
+Image ROC-AUC — przekątna (wynik zaraz po nauczeniu klasy) kontra ostatni wiersz (po nauczeniu
+wszystkich dziesięciu):
+
+| klasa | po nauczeniu | na końcu |
+|---|---|---|
+| Apple | 0.771 | 0.263 |
+| Candy | 0.885 | 0.608 |
+| Capsule | 0.949 | 0.553 |
+| Cup | 0.576 | 0.286 |
+| Energy-bar | 0.819 | 0.355 |
+| Eraser | 0.939 | 0.237 |
+| Flash-drive | 0.937 | 0.305 |
+| Food-container | 0.812 | 0.608 |
+| Mouse | 0.762 | 0.614 |
+| Ruler | 0.860 | 0.860 |
+
+Czyli model uczy się każdej klasy poprawnie (przekątna 0.58–0.95), ale bez żadnego mechanizmu
+przeciwdziałania zapominaniu wyniki na wcześniejszych klasach spadają poniżej losowego — dokładnie to,
+co strategia `Naive` ma pokazywać.
+
+Ten sam strumień ze strategią `CumulativeStrategy` (retrening na wszystkich danych widzianych do tej
+pory) dla porównania:
+
+| metryka | Naive | Cumulative |
+|---|---|---|
+| image ROC-AUC — ACC | 0.469 | **0.555** |
+| image ROC-AUC — FM | 0.402 | **0.194** |
+| image ROC-AUC — BWT | −0.080 | **−0.030** |
+| image ROC-AUC — ContinualAverage | 0.523 | **0.649** |
+| pixel ROC-AUC — ACC | 0.679 | **0.743** |
+| pixel ROC-AUC — FM | 0.122 | **0.061** |
+| pixel AP — ACC | 0.028 | 0.028 |
+
+Cumulative zmniejsza zapominanie o połowę i podnosi ACC, czyli uporządkowanie strategii wychodzi
+zgodnie z oczekiwaniem. Pixel AP pozostaje bardzo niskie w obu przypadkach — to zgadza się z główną
+obserwacją paperu, że lokalizacja pikselowa jest najsłabszym punktem metod na tym benchmarku.
+
+### 5.3 Walidacja krzyżowa callbacku grupowego
+
+`GroupedConceptMetricCallback` z mapowaniem identycznościowym (klasa → własna grupa) daje wartości
+identyczne z klasycznym `ConceptMetricCallback`: maksymalna różnica bezwzględna wynosi dokładnie 0.0
+w obu przebiegach.
+
+### 5.4 Gdzie idzie czas
+
+Trening zajął 45 s (Naive) i 222 s (Cumulative), ewaluacja odpowiednio 3 027 s i 3 052 s — czyli 93–99%
+czasu przebiegu. Materializacja zbioru (dekodowanie i skalowanie ~10 tys. JPEG-ów) zajęła dodatkowe
+912 s i odbywa się zachłannie, bo samodzielny `ContinualADBenchmarkReader` idzie przez `read_dataset`,
+a nie przez `LazyVisionConceptList`.
+
+Potwierdza to założenie z §3.1 i §3.2: kosztem benchmarku jest ewaluacja, nie trening, więc granulacja
+i sposób trzymania danych testowych w pamięci są ważniejsze niż cokolwiek po stronie treningu.
+
+---
+
+## 6. Baseline Continual-MEGA — ustalenia z lektury referencji
+
+Port modelu bazowego (`pyclad/vision/models/continual_mega_baseline/`) odtwarza referencję, a nie „poprawną" wersję CLIP.
+Trzy odstępstwa referencji od standardowego użycia CLIP są istotne dla wyników i muszą być powtórzone,
+bo checkpointy zostały wytrenowane właśnie tak.
+
+### 6.1 Backbone używa `nn.GELU` zamiast QuickGELU
+
+`CLIP/clip.py::create_model` buduje model przez `CLIP(**model_cfg, cast_dtype=cast_dtype)` — bez
+`quick_gelu`, a `_build_vision_tower` ma `quick_gelu: bool = False`, więc aktywacją jest `nn.GELU`.
+Wagi pochodzą z `load_openai_model`, który buduje pomocniczy model z `quick_gelu=True`, ale ten model
+służy wyłącznie do wyciągnięcia `state_dict()` i jest odrzucany. Komentarz w ich własnym kodzie
+(`model.py:82`) mówi wprost, że modele OpenAI trenowano z QuickGELU.
+
+Odtwarzamy to: `build_clip_backbone` tworzy `open_clip.create_model("ViT-L-14-336")` (czyli `nn.GELU`,
+bo konfiguracja o tej nazwie nie ustawia `quick_gelu`) i wgrywa do niego wagi OpenAI.
+
+### 6.2 Enkoder tekstu działa bez maski przyczynowej
+
+`CoOp.py::TextEncoder.forward` woła `self.transformer(x)`, a ich `Transformer.forward` ma
+`attn_mask: Optional[torch.Tensor] = None`. Standardowy CLIP przekazuje tu maskę przyczynową. Nasz
+`ClipTextEncoder` powtarza wywołanie bez maski.
+
+### 6.3 Obrazy nie są normalizowane statystykami CLIP
+
+`dataset/continual.py` w ścieżce ewaluacji robi tylko `convert("RGB")`, `exif_transpose`,
+`Resize(336, BICUBIC)` i `ToTensor()`. `create_model` ustawia `model.visual.image_mean/image_std`, ale
+nikt ich nie używa. Do modelu wchodzą wartości z zakresu [0, 1]. Nasz `ContinualMegaBaseline._to_tensor` dzieli przez 255
+i nie normalizuje.
+
+### 6.4 Brak `albumentations` w `requirements.txt`
+
+`dataset/continual.py` importuje `albumentations` i `albumentations.pytorch.ToTensorV2`, a
+`requirements.txt` ich nie wymienia — instalacja z pliku nie wystarcza do uruchomienia repozytorium.
+
+### 6.5 Podpis Tabeli 2 wskazuje zły scenariusz
+
+Tabela 2 ma podpis „Experimental results on Scenario 3", identyczny jak Tabela 3, ale jej kolumny to
+58-5 (12 zadań), 58-10 (6 zadań) i 58-30 (2 zadania), co odpowiada 60 nowym klasom, czyli scenariuszowi
+2 (scenariusz 3 ma 30 nowych klas, więc 6/3/1 zadań — i to są kolumny Tabeli 3). Tekst artykułu
+potwierdza: „we refer to the quantitative results from Scenarios 2 and 3, presented in Table 2 and
+Table 3". Podpis Tabeli 2 jest błędny.
+
+---
+
+## 7. Pozyskanie danych
+
+Benchmark wymaga pięciu zbiorów. Meta referencji odwołują się do nich prefiksami
+`continual_ad`, `Real-IAD-512`, `VIADUCT`, `BTAD`, `MPDD` — to definiuje docelowy układ katalogów pod
+`--data_root`.
+
+### 7.1 Real-IAD wymaga wariantu 512 i zgody na licencję
+
+Repozytorium `Real-IAD/Real-IAD` na HuggingFace ma `gated: auto` (CC BY-NC-SA 4.0) — bez
+uwierzytelnienia `resolve` zwraca „Access to dataset Real-IAD/Real-IAD is restricted". Potrzebna jest
+akceptacja warunków na stronie zbioru i token z `canReadGatedRepos`.
+
+Całe repozytorium to 622 GiB w czterech wariantach rozdzielczości, ale meta wskazują wyłącznie
+`Real-IAD-512`, więc wystarczy `realiad_512/*.zip` — **14,17 GiB** w 30 archiwach. `realiad_raw`
+(507 GiB), `realiad_1024` (54 GiB) i `realiad_256` (4 GiB) są zbędne.
+
+Archiwa mają wewnątrz prefiks `<klasa>/`, a meta oczekują `Real-IAD-512/images/<klasa>/...`, więc
+rozpakowanie musi celować w podkatalog `images`, nie w korzeń zbioru.
+
+### 7.2 Nazwy plików w Real-IAD mają niespójny separator
+
+Część klas używa podwójnego podkreślenia po nazwie klasy (`audiojack__0001_NG_BX_C1_...jpg`), część
+pojedynczego (`toy_brick_0258_OK_C5_...jpg`). Meta odwzorowują to wiernie, więc dla nas jest to
+nieistotne, ale każdy kod składający ścieżki z nazwy klasy i identyfikatora próbki się na tym wywróci.
+
+### 7.3 VIADUCT: 9 z 49 archiwów bez `Content-Length`
+
+Repozytorium fordatis (`handle/fordatis/363.2`) udostępnia jedno archiwum ZIP na klasę, bez
+uwierzytelnienia. Dla 40 z 49 `HEAD` zwraca `Content-Length` (razem 13,21 GiB), dla pozostałych 9
+odpowiedź jest chunkowana i rozmiaru nie podaje — weryfikacja kompletności pobrania musi w tych
+przypadkach opierać się na odczycie centralnego katalogu ZIP, nie na porównaniu rozmiaru.
+
+Nazwy archiwów odpowiadają dokładnie nazwom katalogów klas w meta (włącznie ze spacjami i numerycznym
+prefiksem, np. `11 ring cable lug`), a prefiks wewnątrz archiwum to `<klasa>/`.
+
+### 7.4 BTAD ma inny prefiks w archiwum niż w meta
+
+`btad.zip` rozpakowuje się do `BTech_Dataset_transformed/`, a meta oczekują `BTAD/`. Katalog trzeba
+przenieść lub przemianować po rozpakowaniu.
+
+### 7.5 MPDD nie ma źródła nadającego się do skryptu
+
+README oryginalnego zbioru wskazuje folder SharePoint uczelni (`vutbr-my.sharepoint.com`), którego nie
+da się pobrać bezwarunkowym żądaniem HTTP, a repozytorium `stepanje/MPDD` nie ma wydań z danymi. MPDD
+trzeba dostarczyć ręcznie.
+
+### 7.6 MVTec-AD również wymaga obejścia
+
+Link z `datasets_download_link.txt` prowadzi na stronę MVTeca, która publicznie wystawia wyłącznie
+archiwum z kodem ewaluacji; sam zbiór jest za formularzem, a historyczny bezpośredni odsyłacz do
+mydrive zwraca 404. Użyliśmy kopii `ProgrammerGnome/MVTecAD` na HuggingFace, która trzyma dosłowne
+archiwum `mvtec_anomaly_detection.tar.xz` o rozmiarze zgodnym z oryginałem. Zawartość zweryfikowana
+przeciwko meta: `scenario1_base` i `meta_mvtec` rozwiązują się bez braków.
+
+VisA pobiera się natomiast wprost z oryginalnego źródła (`amazon-visual-anomaly.s3.us-west-2`,
+bez uwierzytelnienia).
+
+### 7.7 Scenariusz 1 wymaga siedmiu zbiorów, nie pięciu
+
+Scenariusze 2 i 3 składają się z ContinualAD, Real-IAD, VIADUCT, MPDD i BTAD, ale scenariusz 1 dokłada
+MVTec-AD i VisA — trenuje na nich, dlatego nie ma w nim ewaluacji zero-shot. Rozliczenie klas zrobione
+tylko na metach scenariusza 2 przeoczy te dwa zbiory.
+
+### 7.8 Stan po pobraniu
+
+Wszystkie meta rozwiązują się bez braków (`img_path` i `mask_path` sprawdzone plik po pliku):
+
+| meta | obrazy | maski |
+| --- | --- | --- |
+| `scenario1_base` | 117 275 | 45 151 |
+| `scenario1_{5,10,30}classes_tasks` | 78 883 | 28 740 |
+| `scenario2_base` | 96 253 | 36 552 |
+| `scenario2_30classes_tasks` | 95 748 | 34 881 |
+| `scenario3_base` | 108 078 | 37 710 |
+| `scenario3_30classes_tasks` | 53 442 | 17 897 |
+| `meta_mvtec` (zero-shot) | 5 354 | 1 258 |
+
+Zajętość na dysku: ContinualAD 66 GB, VIADUCT 20 GB, Real-IAD-512 15 GB, BTAD 5,6 GB, MVTec-AD 5,0 GB,
+VisA 1,9 GB, MPDD 1,8 GB — razem 115 GB.
+
+---
+
+## 8. Odtworzenie baseline'u Continual-MEGA
+
+### 8.1 Co odpowiada „podstawowej konfiguracji"
+
+Wydane checkpointy pokrywają wyłącznie scenariusz 2 z rozmiarem zadania 30 (`checkpoint_base.pth` plus
+`30classes_tasks/checkpoint_task_{1,2}.pth`) i dokładnie tę konfigurację uruchamia `eval_continual.sh`.
+Odpowiada jej kolumna **58-30 (2 tasks)** w tabeli, której podpis brzmi „Table 2 … Scenario 3" (patrz 6.5).
+Trening nie jest potrzebny — sama inferencja z checkpointów.
+
+### 8.2 Wynik
+
+Pełny przebieg na kompletnym zbiorze, 418 848 inferencji (95 093 + 134 114 + 189 641):
+
+| metryka | pyCLAD | paper |
+| --- | --- | --- |
+| Image ACC | 76,7567 → 76,8 | 76,8 |
+| Image FM | 1,0500 | 1,0 |
+| Pixel ACC | 27,4767 → 27,5 | 27,5 |
+| Pixel FM | 2,5700 → 2,6 | 2,6 |
+
+Macierze (wiersz = checkpoint, kolumna = grupa klas):
+
+```
+Image-AUROC        base   task_1   task_2      Pixel-AP        base   task_1   task_2
+after base       0.8201        -        -      after base    0.3571        -        -
+after task_1     0.8118   0.7350        -      after task_1  0.3394   0.2544        -
+after task_2     0.8153   0.7188   0.7686      after task_2  0.3354   0.2247   0.2642
+```
+
+Image FM wypada na 1,0500, czyli dokładnie na granicy zaokrąglenia do jednego miejsca — różnica rzędu
+1e-4 wobec referencji decyduje o kierunku zaokrąglenia. Pozostałe trzy liczby trafiają w wartości z
+artykułu.
+
+### 8.3 Zgodność z referencją klasa po klasie
+
+Poza wynikiem zbiorczym porównaliśmy wartości per klasa z `eval_continual.py` dla wszystkich trzech
+checkpointów — 17 par klasa×checkpoint. Największa różnica to **0,0039 dla Image-AUROC** (klasa
+`continual_ad_Cup`, której AUROC wynosi 0,42, więc jest najczulsza na perturbacje) i **0,0003 dla
+Pixel-AP**. Referencja liczy w `torch.cuda.amp.autocast()` (fp16), nasza implementacja w fp32 — to
+tłumaczy cały zaobserwowany rozrzut.
+
+### 8.4 Macierz z zerami zamiast NaN nie zmienia metryk
+
+Referencja inicjalizuje macierz zerami i nigdy nie wypełnia górnego trójkąta, my zostawiamy tam NaN.
+Dla ACC to bez znaczenia (liczy się tylko ostatni, w pełni wypełniony wiersz), a dla FM też, bo
+`np.max` po kolumnie z zerem i jedną wartością dodatnią daje tę samą wartość co `np.nanmax` po NaN i
+tej wartości. Zbieżność jest przypadkowa, nie wynika z konstrukcji — przy ujemnych wartościach metryki
+zera dawałyby inny wynik.
+
+### 8.5 Koszt i wydajność
+
+Trzy zadania tablicowe po 8 CPU i 48 GB, każde z jednym GH200: 56 min, 80 min i 111 min, razem 4,1
+godziny GPU. `MaxRSS` 44,6 GB, czyli 93 % przydziału — szczyt wyznacza `average_precision_score` na
+klasach Real-IAD (ok. 600 mln pikseli na klasę). CPU efficiency 19 %, co jest tu oczekiwane: wczytywanie
+idzie na ośmiu wątkach, ale inferencja na GPU jest wobec niego sekwencyjna, więc rdzenie czekają.
+
+Wąskim gardłem było wczytywanie: obrazy ContinualAD to JPEG 2992×2992, a pojedynczy rdzeń wyrabia
+11 obrazów na sekundę. Zmierzone tempo naszej ścieżki (10,90 img/s) i referencyjnej (11,15 img/s) jest
+praktycznie identyczne — referencja wygrywała wyłącznie czterema workerami `DataLoader`. Po
+zrównolegleniu wczytywania klasa 1 000 obrazów zajmuje 46 s zamiast ok. 500 s.
+
+Przy `TRESBillingWeights` tej partycji (GPU 1,0, CPU 0,0139, pamięć 0,0000082/MB) osiem rdzeni kosztuje
+11 % ceny samego GPU, a 48 GB pamięci 40 %. Oszczędzanie na rdzeniach wydłuża czas z GPU i wychodzi
+drożej — pamięć warto natomiast dobierać z pomiaru.
+
+Naturalny kolejny krok, gdyby czas zaczął uwierać: prefetch następnego konceptu w tle podczas
+inferencji. Podniósłby CPU efficiency i skrócił czas o rząd 40 %, kosztem złożoności pętli ewaluacji.
+
+### 8.6 Zero-shot: kolumna „zero-shot (Avg.)" nie dotyczy jednej konfiguracji
+
+Ten sam checkpoint `checkpoint_task_2.pth` posłużył do ewaluacji zero-shot na MVTec-AD (meta autorów) i
+VisA (split `split_csv/1cls.csv`, bo dla VisA autorzy nie wydali meta — patrz 1.3):
+
+| metryka | pyCLAD | Tabela 4, wiersz pełny, 58-30, 3 ziarna | Tabela 2, „zero-shot (Avg.)" |
+| --- | --- | --- | --- |
+| MVTec-AD Image-AUROC | 80,2 | 81,2 ± 0,8 (−1,2σ) | 78,4 |
+| MVTec-AD Pixel-AP | 33,0 | 32,1 ± 0,8 (+1,1σ) | 31,5 |
+| VisA Image-AUROC | 78,7 | 78,8 ± 0,2 (−0,5σ) | 76,9 |
+| VisA Pixel-AP | 18,5 | 18,8 ± 0,3 (−1,0σ) | 17,2 |
+
+Wobec kolumny z Tabeli 2 nasze wyniki są konsekwentnie wyższe — o 1,8 obrazowo i 1,4 pikselowo na obu
+zbiorach naraz. Tak regularne odchylenie nie wygląda na szum. Wyjaśnia je Tabela 4, która raportuje
+zero-shot **osobno dla konfiguracji 58-30**, czyli dokładnie dla wydanego checkpointu: tam wszystkie
+cztery nasze liczby mieszczą się w 1,2 odchylenia standardowego.
+
+Wniosek: nagłówek „zero-shot (Avg.)" w Tabelach 2 i 3 oznacza uśrednienie po trzech rozmiarach zadania
+(58-5, 58-10, 58-30), a nie wynik konfiguracji 58-30. Artykuł nigdzie tego nie definiuje. Przy tym
+założeniu implikowana średnia zero-shot dla 58-5 i 58-10 wynosi 77,0 / 31,2 (MVTec) i 76,0 / 16,4
+(VisA) — czyli nieco poniżej wartości dla 58-30, co jest spójne z tym, że więcej zadań oznacza większy
+dryf. Zweryfikować tego nie da się bez checkpointów dla 5 i 10 klas na zadanie, których autorzy nie
+wydali.
+
+Ta sama różnica ziaren tłumaczy relację wyników ciągłych: Tabela 2 podaje 76,8 / 27,5 przy FM 1,0 / 2,6
+(pojedynczy przebieg, ten z wydanego checkpointu, który odtworzyliśmy co do cyfry), a Tabela 4 dla tej
+samej konfiguracji 76,3 ± 0,4 / 26,8 ± 0,8 przy FM 1,4 ± 0,5 / 2,8 ± 0,2 (średnia z trzech ziaren).
+
+### 8.7 Co pozostaje niedostępne bez treningu
+
+Wydane są wyłącznie checkpointy scenariusza 2 dla 30 klas na zadanie. Bez dopisania `fit` nie da się
+odtworzyć: całej Tabeli 1 (scenariusz 1), całej Tabeli 3 (scenariusz 3), konfiguracji 58-5 i 58-10 w
+Tabeli 2, trzech pierwszych wierszy ablacji z Tabeli 4 ani krzywych uczenia z Rysunku 5.
+
+Pierwszy wiersz Tabeli 4 („vanilla pretrained CLIP") formalnie nie wymaga treningu, ale artykuł nie
+precyzuje jego konfiguracji — nie wiadomo, czy prompty są wtedy bez uczonego kontekstu (`n_ctx=0`), czy
+z nieuczonym. Rozbieżność wobec tego wiersza nie byłaby więc informatywna.
+
+---
+
+## 9. Pełne odtworzenie benchmarku z własnego treningu
+
+Trening całego benchmarku — trzy bazy po 50 epok i 50 zadań ciągłych po 20 epok — zajmuje łącznie
+około godziny GPU. Kosztem jest ewaluacja: pełne macierze dla dziewięciu konfiguracji to 8,5 mln
+inferencji, czyli około 109 godzin GPU.
+
+### 9.1 Wyniki wobec artykułu
+
+Wartości ACC i FM w formacie Image / Pixel.
+
+| tabela | konfiguracja | ACC nasze | ACC paper | Δ ACC | FM nasze | FM paper |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 85-5 (12 zadań) | 71,5 / 23,6 | 73,8 / 25,7 | −2,3 / −2,1 | 2,3 / 2,3 | 2,0 / 2,1 |
+| 1 | 85-10 (6) | 73,2 / 25,8 | 75,8 / 28,0 | −2,6 / −2,2 | 2,4 / 2,8 | 1,3 / 1,9 |
+| 1 | 85-30 (2) | 77,7 / 30,1 | 78,9 / 32,7 | −1,2 / −2,6 | 1,2 / 2,9 | 0,8 / 1,8 |
+| 2 | 58-5 (12) | 68,8 / 19,4 | 69,5 / 19,7 | −0,7 / −0,3 | 2,0 / 2,8 | 3,2 / 3,4 |
+| 2 | 58-10 (6) | 70,6 / 21,5 | 72,4 / 22,2 | −1,8 / −0,7 | 2,5 / 3,4 | 2,5 / 3,8 |
+| 2 | 58-30 (2) | 74,1 / 25,8 | 76,8 / 27,5 | −2,7 / −1,7 | 1,8 / 2,2 | 1,0 / 2,6 |
+| 3 | 58-5 (6) | 70,6 / 18,9 | 69,5 / 19,7 | +1,1 / −0,8 | 2,8 / 3,6 | 3,2 / 3,4 |
+| 3 | 58-10 (3) | 73,1 / 22,4 | 72,7 / 23,1 | +0,4 / −0,7 | 2,9 / 3,1 | 2,4 / 3,7 |
+| 3 | 58-30 (1) | 76,9 / 27,8 | 76,8 / 29,5 | +0,1 / −1,7 | −0,2 / 2,7 | −0,3 / 2,1 |
+
+Średnia różnica: −1,09 na Image-ACC i −1,43 na Pixel-ACC. Metryki obrazowe scenariusza 3 trafiają
+niemal dokładnie, metryki pikselowe są niżej wszędzie.
+
+### 9.2 Pomiar oddziela błąd pomiaru od błędu treningu
+
+Z wydanych checkpointów autorów nasz ewaluator odtwarza artykuł co do cyfry: Image ACC 76,8, Pixel ACC
+27,5, Pixel FM 2,6, Image FM na granicy zaokrąglenia (1,0500). Zgodność klasa po klasie z
+`eval_continual.py` dla wszystkich trzech checkpointów, 17 par klasa×checkpoint, mieści się w 0,0039
+dla Image-AUROC i 0,0003 dla Pixel-AP. Różnice z tabeli 9.1 pochodzą więc wyłącznie z treningu.
+
+---
+
+## 10. Ablacja syntetycznych anomalii nie odtwarza się nawet kodem autorów
+
+### 10.1 Poprawny odczyt wierszy Tabeli 4
+
+Układ znaczników w tabeli jest w ekstrakcji tekstu nieczytelny, ale tekst artykułu rozstrzyga:
+„omitting synthetic anomaly generation **(Adapters + Mixture)**". Drugi wiersz to zatem Adapters
+z Mixture bez Synthetic, a nie same adaptery — co zgadza się z jego niskim FM 0,6 / 0,3, bo to
+uśrednianie adapterów tłumi zapominanie.
+
+### 10.2 Kierunek efektu jest odwrotny niż raportowany
+
+Pixel-ACC dla konfiguracji 58-30, wariant bez syntetycznych minus wariant z syntetycznymi:
+
+| źródło | bez Synthetic | z Synthetic | różnica |
+| --- | --- | --- | --- |
+| artykuł, Tabela 4 | 22,3 | 26,8 | **−4,5** |
+| nasza implementacja, 4 ziarna | 29,0 ± 0,3 | 26,2 ± 0,6 | **+2,8** |
+| kod autorów, 3 ziarna | 30,8 ± 0,1 | 27,7 ± 0,9 | **+3,1** |
+
+Kod autorów odtwarza nasz kierunek, nie swój własny raportowany. Kontrola poprawności układu: ten sam
+kod na wierszu pełnym daje Image ACC 76,1 ± 0,3 wobec 76,3 ± 0,4 i Pixel ACC 27,7 ± 0,9 wobec
+26,8 ± 0,8 z artykułu, więc konfiguracja i pomiar są prawidłowe, a rozjeżdża się wyłącznie wariant bez
+syntetycznych.
+
+To samo widać w kolumnach zero-shot, gdzie odchylenia po czterech ziarnach wynoszą 0,4–0,9:
+
+| wiersz | MVTec Pixel-AP nasze / paper | VisA Pixel-AP nasze / paper |
+| --- | --- | --- |
+| bez Synthetic | 41,5 ± 0,4 / 26,3 | 22,4 ± 0,9 / 13,9 |
+| bez Mixture | 33,9 ± 1,1 / 35,7 | 18,3 ± 0,8 / 19,7 |
+| pełny | 32,7 ± 1,5 / 32,1 | 18,1 ± 0,8 / 18,8 |
+
+Wniosek: teza artykułu, że synteza anomalii jest kluczowa dla jakości lokalizacji, nie zachodzi
+w żadnej z dwóch implementacji. Syntetyczne anomalie **pogarszają** Pixel-AP o około 3 punkty.
+
+### 10.3 Błąd w kodzie autorów blokujący ablację
+
+`train_base.py` ma własny argument `--num_tasks` z domyślną wartością 12 i zapisuje pliki CSV z wynikami
+o 13 kolumnach, podczas gdy `train_continual.py --num_tasks 2` wczytuje je do macierzy 3×3 i przewraca
+się na `could not broadcast input array from shape (13,) into shape (3,)`. Skrypty w `train_scripts/`
+nigdy tego nie ujawniają, bo dla scenariusza 1 z pięcioma klasami na zadanie liczba zadań wynosi
+właśnie 12. Uruchomienie dowolnej innej konfiguracji wymaga podania `--num_tasks` również przy
+trenowaniu bazy.
+
+---
+
+## 11. Rozbieżność treningowa: ziarno czy implementacja
+
+Baza scenariusza 2, 58 klas, ta sama ewaluacja:
+
+| źródło | I-AUROC | P-AP |
+| --- | --- | --- |
+| wydany checkpoint | 82,01 | 35,71 |
+| kod autorów, 4 ziarna | 81,50 ± 0,36 | 36,50 ± 0,65 |
+| nasza implementacja, 5 ziaren | 80,81 ± 0,52 | 34,51 ± 0,85 |
+
+Wydany checkpoint mieści się w rozkładzie kodu autorów, więc jest zwykłym przebiegiem, a nie wynikiem
+szczególnym. Różnica implementacji wynosi 0,69 na I-AUROC (około 1,5 odchylenia, czyli szum) i 1,99 na
+P-AP (około 2,6 odchylenia). Nasza implementacja ma zatem realną, systematyczną stratę na lokalizacji,
+i tylko na niej — co odpowiada temu, że w tabeli 9.1 metryki pikselowe są niżej konsekwentnie, a
+obrazowe nie.
+
+Hipotezy obalone analitycznie przez lekturę kodu: optymalizator promptów autorów nie trenuje niczego
+poza `ctx`, bo `register_embeddings` w `PromptLearner` to zwykły słownik Pythona, a nie zarejestrowane
+bufory; kolejność grup promptów, agregacja cech tekstowych, miejsce liczenia strat względem
+interpolacji, parametry obu optymalizatorów, liczba epok i rozmiar batcha są zgodne.
+
+Hipotezy sprawdzane eksperymentem równoważności kroku treningowego: różnice numeryki `autocast`
+(referencja generuje szum na CPU w fp32 i przenosi na GPU, my generujemy na urządzeniu w dtype tensora)
+oraz zachowanie strat focal i dice w fp16. Arytmetycznie potwierdzone: w fp16 wyrażenie `1 − 1e-5`
+zaokrągla się dokładnie do 1,0, więc górny clamp w focal loss jest wtedy pusty, a suma po 112 896
+pikselach przekracza zakres fp16 przy średnim prawdopodobieństwie powyżej 0,58.
+
+---
+
+## 12. Wiersz „vanilla CLIP" z Tabeli 4
+
+Przeszukanie objęło 16 konfiguracji w trzech rundach. Komórka MVTec odtwarza się dokładnie —
+**75,3 / 2,2** wobec 75,2 / 2,3 — przy pojedynczej parze promptów („A photo of a normal object" i „A
+photo of an anomalous object", czyli czwarta z dziesięciu par autorów), enkoderze tekstu **z maską
+przyczynową** i wyniku obrazowym liczonym z globalnego osadzenia CLIP, a nie z maksimum po patchach.
+
+Rozstrzygające obserwacje z przeszukania: bez maski przyczynowej wynik spada do 59,5, sposób agregacji
+promptów jest bez znaczenia (79,0 wobec 79,1), a warstwa cech ma duże znaczenie (warstwa 12 daje 61,8,
+warstwa 6 daje 49,8).
+
+Komórka VisA nie odtwarza się żadną z przebadanych konfiguracji: pojedyncza para daje 64,1 przy celu
+61,8, a zestaw dwudziestu promptów trafia VisA (61,3), ale psuje MVTeca do 79,0. Split VisA został
+niezależnie potwierdzony pomiarem — dla wytrenowanego checkpointu `split_csv/1cls.csv` daje 78,68 /
+18,53 wobec 78,8 ± 0,2 / 18,8 ± 0,3 z Tabeli 4, podczas gdy pozostałe dwa splity zaniżają Pixel-AP do
+około 12,4 — więc nie jest to kwestia zbioru testowego.
+
+---
+
+## 13. Gdzie leży resztowa różnica treningowa
+
+### 13.1 Krok treningowy jest równoważny
+
+Porównanie przy identycznych wagach adapterów i kontekstu oraz tym samym batchu, nasza implementacja
+wobec `CLIPAD` i `PromptMaker` referencji:
+
+| etap | maksymalna różnica |
+| --- | --- |
+| cechy tekstowe | 6,7e-08 |
+| cechy wizualne, warstwy 6/12/18/24 | 1,4e-06 → 7,8e-04 |
+| strata segmentacyjna w fp32 | **9,5e-07** |
+| strata segmentacyjna pod `autocast` | 2,3e-04 |
+
+Straty, przebieg w przód i preprocessing są więc wykluczone jako źródło rozbieżności.
+
+### 13.2 Pod `autocast` focal i dice dostają fp32
+
+Zmierzone typy: wyjście bloku transformera `float16`, cechy tekstowe `float16`, logity po mnożeniu
+`float16`, **po interpolacji `float32`**, **po softmaksie `float32`**. Suma w dice na obraz wynosi
+55 956 przy zakresie fp16 do 65 504, ale liczy się w fp32, więc nie przepełnia.
+
+Obala to dwie hipotezy sprawdzane wcześniej arytmetycznie: pusty clamp w focal (w fp16 `1 − 1e-5`
+zaokrągla się do 1,0) i przepełnienie sumy w dice. Obie dotyczyłyby fp16, a tam jest fp32 — w obu
+implementacjach jednakowo.
+
+### 13.3 Dtype szumu: hipoteza obalona
+
+```
+referencja:  torch.normal(0, sigma, x.shape).to(x.device)        # fp32, suma promowana do fp32
+nasza:       torch.normal(..., device=x.device, dtype=x.dtype)   # fp16, bo x jest fp16
+```
+
+A/B na bazie scenariusza 2, po piętnaście ziaren na wariant:
+
+| wariant | I-AUROC | Pixel-AP |
+| --- | --- | --- |
+| fp16 | 79,70 ± 1,81 | 33,23 ± 2,93 |
+| fp32 | 79,97 ± 1,68 | 33,56 ± 2,29 |
+
+Efekt fp32 − fp16 na Pixel-AP wynosi **+0,32 przy t(14) = 0,32**, iloraz wariancji 1,64 przy
+F(14, 14) nieistotnym. Dtype szumu nie jest źródłem resztowej różnicy.
+
+Ta sama wielkość mierzona przy rosnącej liczbie ziaren: **+2,36 (n = 3), +2,01 (n = 7), +0,32
+(n = 15)**. Dwa pierwsze oszacowania były artefaktami małej próby przy wariancji przebiegu rzędu 2,5.
+Przy n = 7 wyglądało dodatkowo, że fp16 czasem destabilizuje trening, bo dwa jego przebiegi wypadły
+poniżej 30, a fp32 żaden — przy n = 15 najgorszym przebiegiem całego zestawu okazał się jednak
+wariant fp32 (ziarno 303, Pixel-AP 26,28).
+
+### 13.4 Końcowa strata treningowa przewiduje wynik
+
+Korelacja końcowej straty treningowej z Pixel-AP na trzydziestu przebiegach A/B wynosi
+**r = −0,915 przy t(12) = −7,8**. Słabe przebiegi nie są artefaktem ewaluacji — to przebiegi, które
+gorzej się zbiegły. Rozkład straty końcowej jest przy tym w obu wariantach nieodróżnialny
+(fp16 2,612 ± 0,440, fp32 2,695 ± 0,566), co niezależnie potwierdza wniosek z 13.3.
+
+Zmienna ta pozwala przewidzieć wynik przed ewaluacją: ziarno 303 w wariancie fp32 miało stratę
+końcową 4,560, najwyższą w zestawie, i dało najniższy Pixel-AP.
+
+## 14. Źródło zmienności: niedeterministyczna uwaga cuDNN
+
+### 14.1 Trening nie jest powtarzalny przy ustalonym ziarnie
+
+Ta sama konfiguracja, ten sam sprzęt, `torch.manual_seed` ustawione, dwa niezależne przebiegi:
+
+| ziarno | przebieg A | przebieg B |
+| --- | --- | --- |
+| 1 | 34,71 | 34,31 |
+| 42 | 34,95 | 29,56 |
+| 111 | 33,90 | 32,35 |
+
+Ma to konsekwencję dla sekcji 11: odchylenie 0,85 wyliczone tam z pięciu ziaren opisywało zmienność
+**między ziarnami**, a nie pełną zmienność przebiegu, która sięga 2,5. Teza o „systematycznej różnicy
+2,0 punktu przy 2,6 odchylenia" była zbyt pewna.
+
+### 14.2 `use_deterministic_algorithms` nie wystarcza
+
+Przy `torch.use_deterministic_algorithms(True, warn_only=True)`, `cudnn.benchmark = False` i
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` powtórzenie ziarna 42 nadal się rozjeżdża: |Δ| Pixel-AP wynosi
+0,59 w fp16 i 1,98 w fp32. Logi wskazują dokładnie jedną operację:
+
+```
+cuDNN Attention defaults to a non-deterministic algorithm.
+(aten/src/ATen/native/transformers/cuda/attention_backward.cu:212)
+```
+
+`warn_only=True` ją przepuszcza, a `warn_only=False` przerwałby trening wyjątkiem zamiast go naprawić.
+
+### 14.3 Wymuszenie backendu math daje powtarzalność co do bitu
+
+```python
+torch.backends.cuda.enable_cudnn_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
+torch.backends.cuda.enable_mem_efficient_sdp(False)
+torch.backends.cuda.enable_math_sdp(True)
+```
+
+Powtórzenie ziarna 42 daje wtedy **|Δ| = 0 co do bitu** na obu metrykach i w obu wariantach szumu.
+Niedeterminizm propagacji wstecznej uwagi cuDNN był jedynym źródłem zmienności przebiegu.
+
+### 14.4 Backend math poprawia też sam wynik
+
+Sześć ziaren, konfiguracja bazowa scenariusza 2:
+
+| konfiguracja | I-AUROC | Pixel-AP |
+| --- | --- | --- |
+| domyślny backend, fp16 | 79,70 ± 1,81 | 33,23 ± 2,93 |
+| `use_deterministic_algorithms`, fp16 | 78,50 ± 2,23 | 32,56 ± 1,80 |
+| **backend math, fp16** | **82,12 ± 0,33** | **37,26 ± 0,18** |
+| **backend math, fp32** | 82,01 ± 0,29 | 37,15 ± 0,53 |
+
+Odchylenie spada dziesięciokrotnie, a Pixel-AP rośnie o cztery punkty. Izolacja jest czysta: wiersze
+drugi i trzeci różnią się **wyłącznie** backendem SDPA, więc poprawa nie pochodzi od flag
+determinizmu. Ewaluacja w obu przypadkach działa na backendzie domyślnym, więc zmiana dotyczy
+wyłącznie treningu.
+
+Wynik 37,26 ± 0,18 przewyższa liczbę referencyjną ściganą w sekcji 11 (36,50 ± 0,65). Czy backend
+poprawia tak samo kod referencji, sprawdza eksperyment `refsdp` — sześć ziaren razy dwa backendy na
+kodzie autorów.
+
+### 14.5 Krok wsteczny jest równoważny na obu ścieżkach
+
+Test równoważności rozszerzony o gradienty i o ścieżkę syntetycznych anomalii. Szum jest w niej
+wspólny dla obu implementacji: `torch.normal` podmieniony na generator CPU o ustalonym ziarnie, bo
+referencja losuje na CPU, a my na GPU, więc strumienie RNG są inaczej nieporównywalne. Batch
+mieszany, osiem anomalii i osiem obrazów normalnych — poprzedni sortował anomalie na przód, przez co
+strata syntetyczna, liczona wyłącznie na obrazach normalnych, zwracała stałe zero.
+
+| wielkość | max\|Δ\| | względna |
+| --- | --- | --- |
+| gradienty adapterów, strata segmentacyjna | 1,5e-05 | 2,2e-03 |
+| gradienty kontekstu CoOp, strata segmentacyjna | 6,7e-06 | 9,1e-06 |
+| gradienty adapterów, strata syntetyczna | 3,2e-05 | 8,9e-03 |
+| gradienty kontekstu CoOp, strata syntetyczna | 1,4e-05 | 1,0e-05 |
+
+Wszystkie ścieżki kodu są więc pokryte testem równoważności.
+
+## 15. Mechanizm: `need_weights` i ścieżka szybka uwagi
+
+### 15.1 Kod referencji jest niewrażliwy na backend SDPA
+
+Sześć ziaren, baza scenariusza 2, kod autorów:
+
+| backend | I-AUROC | Pixel-AP |
+| --- | --- | --- |
+| domyślny | 81,78 ± 0,37 | 36,12 ± 0,94 |
+| math | 81,78 ± 0,31 | 36,47 ± 0,44 |
+
+Efekt +0,35 przy t(5) = 0,90 jest nieistotny, podczas gdy u nas ten sam zabieg dawał +4,03. Poprawa
+z sekcji 14.4 nie jest więc właściwością metody, tylko naprawą czegoś, co dotyczyło wyłącznie
+naszego stosu.
+
+### 15.2 Różnica to jeden argument słowa kluczowego
+
+```
+referencja, CLIP/transformer.py:   self.attn(q_x, k_x, v_x, need_weights=True,  attn_mask=attn_mask)
+open_clip 2.24, transformer.py:    self.attn(q_x, k_x, v_x, need_weights=False, attn_mask=attn_mask)
+```
+
+W `nn.MultiheadAttention` `need_weights=True` wymusza wolną ścieżkę, czyli jawny matmul i softmax,
+bo macierz wag trzeba zwrócić. `need_weights=False` otwiera ścieżkę szybką przez
+`scaled_dot_product_attention`, a więc uwagę cuDNN z niedeterministyczną propagacją wsteczną.
+
+Wyjaśnia to jednym mechanizmem cztery obserwacje: niewrażliwość referencji na backend, trzykrotnie
+większy rozrzut u nas, skuteczność wymuszenia backendu math oraz narastanie różnic w przód wraz
+z głębokością warstw w teście równoważności z sekcji 13.1.
+
+Nie jest to błąd w naszej implementacji — równoważność matematyczna została potwierdzona na
+wszystkich ścieżkach w sekcjach 13.1 i 14.5. To różnica biblioteki bazowej: referencja niesie własną,
+zmodyfikowaną kopię `open_clip`, my bierzemy pakiet ze źródeł.
+
+## 16. Cicha awaria przy `open_clip` 3.x
+
+Replikacja na V100 (Ares) dała I-AUROC 59,42 ± 0,36 i Pixel-AP 9,17 ± 0,35, czyli poziom przypadkowy,
+mimo powtarzalności co do bitu. Przyczyną nie jest architektura GPU, lecz wersja biblioteki:
+
+| | Helios | Ares (przed korektą) |
+| --- | --- | --- |
+| `open_clip_torch` | 2.24.0 | 3.3.0 |
+| `visual.transformer.batch_first` | brak atrybutu | `True` |
+
+W `open_clip` 3.x transformer przeszedł na układ **batch-first**, a `_embed_patches` podaje mu
+sekwencję na pierwszej osi (`permute(1, 0, 2)`, konwencja 2.x). Wymiary pozostają poprawne, więc
+`MultiheadAttention` interpretuje pozycje sekwencji jako batch i **nie zgłasza błędu** — model trenuje
+się do bezsensownego optimum. Strata końcowa 3,59 wobec 1,64 na Heliosie.
+
+Myląca jest przy tym diagnostyka: `load_openai_model` wypisuje `No pretrained weights loaded`, ale
+wagi ładuje poprawnie (`logit_scale` 4,6052 wobec 2,6593 przy losowej inicjalizacji), więc ostrzeżenie
+prowadzi na fałszywy trop.
+
+Zabezpieczenie: `build_clip_backbone` sprawdza teraz `batch_first` i przerywa z jawnym komunikatem,
+a `pyproject.toml` deklaruje grupę `vision` z ograniczeniem `open_clip_torch>=2.24,<3.0`. Wcześniej
+zależność nie była zadeklarowana w ogóle.
+
+## 17. Domknięcie: resztowa różnica treningowa wyjaśniona
+
+### 17.1 Pełne zestawienie konfiguracji
+
+Baza scenariusza 2, po sześć ziaren poza pierwszym wierszem:
+
+| konfiguracja | I-AUROC | Pixel-AP | powtarzalność |
+| --- | --- | --- | --- |
+| nasza, domyślna (n = 15) | 79,70 ± 1,81 | 33,23 ± 2,93 | nie |
+| nasza, flagi determinizmu | 78,50 ± 2,23 | 32,56 ± 1,80 | nie |
+| nasza, `need_weights=True` | 81,03 ± 0,62 | 35,75 ± 1,36 | nie |
+| **nasza, `need_weights` + determinizm** | 81,65 ± 0,56 | **36,29 ± 0,51** | **co do bitu** |
+| nasza, backend math + determinizm, GH200 | 82,12 ± 0,33 | 37,26 ± 0,18 | co do bitu |
+| nasza, backend math + determinizm, V100 | 81,77 ± 0,45 | 37,09 ± 0,57 | co do bitu |
+| **referencja, backend domyślny** | 81,78 ± 0,37 | **36,12 ± 0,94** | — |
+| referencja, backend math | 81,78 ± 0,31 | 36,47 ± 0,44 | — |
+
+Wobec referencji (36,12 ± 0,94), test niesparowany:
+
+| konfiguracja | delta | t | wniosek |
+| --- | --- | --- | --- |
+| nasza, domyślna | −2,89 | −3,41 | różne |
+| nasza, flagi determinizmu | −3,56 | −4,29 | różne |
+| nasza, `need_weights` | −0,37 | −0,55 | zgodne |
+| **nasza, `need_weights` + determinizm** | **+0,17** | **+0,39** | **zgodne** |
+
+### 17.2 Wniosek
+
+Odtworzenie ścieżki uwagi referencji, czyli `need_weights=True`, **zamyka resztową różnicę
+treningową**: 36,29 ± 0,51 wobec 36,12 ± 0,94 przy t = 0,39. Ma to sens konstrukcyjny, bo referencja
+wywołuje `nn.MultiheadAttention` dokładnie tak. Różnica ścigana od sekcji 11 nie była więc ani kwestią
+ziarna, ani błędem w naszej implementacji, tylko ścieżką wykonania uwagi w bibliotece bazowej.
+
+Flagi determinizmu same nic nie dają, bo `warn_only=True` przepuszcza uwagę cuDNN. Dopiero razem
+z `need_weights=True`, które w ogóle omija SDPA, dają powtarzalność co do bitu — a zatem resztkowy
+niedeterminizm obserwowany przy samym `need_weights` pochodził z operacji, które `use_deterministic_algorithms`
+faktycznie naprawia.
+
+### 17.3 Backend math jako obserwacja osobna
+
+Wymuszenie backendu math daje 37,26 ± 0,18 na GH200 i 37,09 ± 0,57 na V100, czyli **odtwarza się na
+dwóch architekturach GPU** i przewyższa zarówno naszą konfigurację zgodną z referencją, jak i samą
+referencję, o około jeden punkt. Nie jest to konfiguracja wierna referencji i nie należy jej używać do
+odtwarzania paperu — to osobne ustalenie, że jawny matmul z softmaksem w fp32 uczy baseline nieco lepiej
+niż którakolwiek ze ścieżek używanych przez oba kody.
+
+## 18. Pełne przeliczenie benchmarku na uzgodnionej ścieżce uwagi
+
+Po ustawieniu `need_weights=True` jako domyślnego zachowania (sekcja 17) cały benchmark przeliczono od
+zera: 3 treningi bazowe, 50 treningów zadań, 50 scaleń adapterów, 53 ewaluacje, 25 ewaluacji zero-shot
+i 8 przebiegów ablacji. Wszystkie treningi z `--deterministic`, czyli powtarzalne co do bitu.
+
+### 18.1 Tabele 1–3
+
+| tabela | konfiguracja | ACC-I przed | ACC-I po | paper | ACC-P przed | ACC-P po | paper |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 5-kl., 12 zad. | 71,5 (−2,3) | 71,7 (−2,1) | 73,8 | 23,6 (−2,1) | 25,0 (−0,7) | 25,7 |
+| 1 | 10-kl., 6 zad. | 73,2 (−2,6) | 74,3 (−1,5) | 75,8 | 25,8 (−2,2) | 27,6 (−0,4) | 28,0 |
+| 1 | 30-kl., 2 zad. | 77,7 (−1,2) | 77,9 (−1,0) | 78,9 | 30,1 (−2,6) | 31,9 (−0,8) | 32,7 |
+| 2 | 5-kl., 12 zad. | 68,8 (−0,7) | 71,8 (+2,3) | 69,5 | 19,4 (−0,3) | 20,7 (+1,0) | 19,7 |
+| 2 | 10-kl., 6 zad. | 70,6 (−1,8) | 73,1 (+0,7) | 72,4 | 21,5 (−0,7) | 22,5 (+0,3) | 22,2 |
+| 2 | 30-kl., 2 zad. | 74,1 (−2,7) | 76,8 (+0,0) | 76,8 | 25,8 (−1,7) | 27,0 (−0,5) | 27,5 |
+| 3 | 5-kl., 6 zad. | 70,6 (+1,1) | 72,1 (+2,6) | 69,5 | 18,9 (−0,8) | 20,4 (+0,7) | 19,7 |
+| 3 | 10-kl., 3 zad. | 73,1 (+0,4) | 74,4 (+1,7) | 72,7 | 22,4 (−0,7) | 23,5 (+0,4) | 23,1 |
+| 3 | 30-kl., 1 zad. | 76,9 (+0,1) | 77,1 (+0,3) | 76,8 | 27,8 (−1,7) | 28,7 (−0,8) | 29,5 |
+
+Rozstrzygająca jest nie średnia, lecz rozkład znaków. Pixel-ACC: **przed — dziewięć delt na dziewięć
+ujemnych, średnia −1,42; po — pięć na dziewięć, średnia −0,09**. Prawdopodobieństwo dziewięciu znaków
+z rzędu przy braku obciążenia wynosi 0,004, więc obciążenie było realne i zniknęło. Image-ACC: średnia
+z −1,08 na +0,33. Konfiguracja 58-30 trafia dokładnie: 76,8 wobec 76,8.
+
+### 18.2 Zero-shot
+
+| scenariusz | wariant | MVTec I | MVTec P | VisA I | VisA P |
+| --- | --- | --- | --- | --- | --- |
+| 2 | nasze, 58-30 | 82,7 | 32,4 | 79,3 | 17,6 |
+| 2 | artykuł | 78,4 | 31,5 | 76,9 | 17,2 |
+| 3 | nasze, 58-30 | 69,7 | 29,3 | 66,5 | 14,1 |
+| 3 | artykuł | 75,0 | 28,4 | 69,7 | 13,7 |
+
+Pozostaje nierozstrzygnięta kwestia kolumny „(Avg.)" z sekcji 8, gdzie artykuł podaje dwie różne
+liczby zero-shot dla tego samego modelu.
+
+### 18.3 Tabela 4: wiersz pełny się zgadza, ablacja nadal nie
+
+Cztery ziarna, konfiguracja 58-30:
+
+| wariant | mieszanie | ACC-I | ACC-P | FM-I | FM-P |
+| --- | --- | --- | --- | --- | --- |
+| pełny | tak | 76,0 ± 0,4 | 27,6 ± 0,2 | 1,2 | 2,4 |
+| pełny | nie | 75,5 ± 0,9 | 28,7 ± 0,6 | 6,6 | 9,5 |
+| bez syntetycznych | tak | 78,7 ± 0,5 | 31,2 ± 0,1 | 1,6 | 1,7 |
+| bez syntetycznych | nie | 77,0 ± 0,2 | 30,7 ± 0,6 | 7,1 | 9,4 |
+
+Wiersz pełny odtwarza artykuł (76,0 wobec 76,3 na obrazie, 27,6 wobec 26,8 na pikselach), co
+potwierdza poprawność konfiguracji i pomiaru. Ablacja natomiast **idzie w przeciwną stronę niż
+raportowana**: usunięcie syntetycznych anomalii daje **+3,58 Pixel-ACC przy t(3) = 29,4**, podczas gdy
+artykuł raportuje −4,5. Po uzgodnieniu ścieżki uwagi odchylenia spadły do 0,1–0,2, więc efekt jest
+jednoznaczny — wcześniejsze pomiary dawały +2,8 (nasz kod) i +3,1 (kod autorów) przy odchyleniach
+0,3–0,9.
+
+Kolumny zero-shot Tabeli 4 potwierdzają to samo:
+
+| wiersz | MVTec P nasze | paper | VisA P nasze | paper |
+| --- | --- | --- | --- | --- |
+| pełny | 33,5 ± 0,8 | 32,1 | 18,4 ± 0,6 | 18,8 |
+| bez Mixture | 33,3 ± 1,1 | 35,7 | 17,2 ± 1,5 | 19,7 |
+| bez Synthetic | 40,7 ± 1,2 | 26,3 | 22,9 ± 1,0 | 13,9 |
+
+Wiersze pełny i bez Mixture zgadzają się z artykułem w granicach 1–2,5 punktu, a wiersz bez Synthetic
+rozjeżdża się o 14,4 i 9,0 punktu — i to w kierunku przeciwnym. Teza artykułu, że synteza anomalii jest
+kluczowa dla jakości lokalizacji, nie zachodzi w żadnej z dwóch implementacji ani przed, ani po
+uzgodnieniu ścieżki uwagi.
+
+### 18.4 Luka w manifeście ewaluacji
+
+Manifest zawierał 52 pozycje przy 53 konfiguracjach — brakowało wiersza `2 30 0 base`. Scenariusze 1
+i 3 miały swój wiersz bazowy, scenariusz 2 nie. Wcześniejszy `s2_base.json` pochodził z osobnych
+ewaluacji w `extra/`, które mierzą tę samą konfigurację, więc liczby były poprawne, ale brały się
+z innego źródła niż reszta tabeli. Manifest uzupełniono.
+
+## 19. Ablacja syntetycznych anomalii: obie implementacje zgodne ze sobą, obie niezgodne z artykułem
+
+Powtórzenie sekcji 10 na **wspólnym ewaluatorze** (po uzgodnieniu ścieżki uwagi) i **po cztery ziarna
+na wariant** w obu implementacjach. Konfiguracja 58-30, scenariusz 2.
+
+| implementacja | wariant | ACC-I | ACC-P |
+| --- | --- | --- | --- |
+| kod autorów | z Synthetic | 76,1 ± 0,3 | 27,6 ± 0,8 |
+| kod autorów | bez Synthetic | 78,4 ± 0,4 | 30,8 ± 0,1 |
+| nasz kod | z Synthetic | 76,0 ± 0,4 | 27,6 ± 0,2 |
+| nasz kod | bez Synthetic | 78,7 ± 0,5 | 31,2 ± 0,1 |
+
+Efekt usunięcia syntezy anomalii:
+
+| źródło | Image ACC | Pixel ACC |
+| --- | --- | --- |
+| kod autorów | +2,25 (t(3) = 8,7) | **+3,19 (t(3) = 8,1)** |
+| nasz kod | +2,68 (t(3) = 6,3) | **+3,58 (t(3) = 29,4)** |
+| artykuł, Tabela 4 | — | **−4,5** |
+
+Obie implementacje zgadzają się ze sobą na obu wierszach: 27,6 wobec 27,6 na wariancie pełnym i 30,8
+wobec 31,2 na wariancie bez syntetycznych. Wiersz pełny odtwarza przy tym artykuł (76,1 i 76,0 wobec
+76,3; 27,6 wobec 26,8), co wyklucza błąd konfiguracji lub pomiaru po którejkolwiek ze stron.
+
+Rozbieżność dotyczy **wyłącznie wiersza bez syntetycznych** i ma przeciwny znak niż raportowany.
+Ponieważ kod autorów zachowuje się tak samo jak nasz, sprawa nie jest kwestią naszej implementacji
+i zostaje zamknięta jako niezgodność artykułu z własnym kodem.
+
+Drobna asymetria godna odnotowania: w kodzie autorów wariant bez syntetycznych realizowany jest przez
+wyzerowanie wagi członu (`SYNTH_WEIGHT=0.0`), więc ścieżka szumu nadal się wykonuje i pobiera liczby
+ze strumienia RNG; u nas `use_synthetic_anomalies=False` pomija ją w całości. Matematyka jest
+równoważna, ale konkretne ziarna nie są porównywalne między implementacjami — i nigdy nie były.
+
+## 20. Tabele 1–3 z odchyleniami: cztery ziarna
+
+Sekcja 18.1 podawała liczby z **jednego** przebiegu na konfigurację. Okazały się mylące, więc cały
+benchmark przeliczono na czterech ziarnach (2025, 7, 13, 21 — po 53 ewaluacje każde, wszystkie
+zweryfikowane co do liczby konceptów). Ziarna 2025, 7 i 21 liczone na GH200, ziarno 13 na V100.
+
+| tabela | konfiguracja | ACC-I artykuł | ACC-I nasze | Δ | ACC-P artykuł | ACC-P nasze | Δ |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 5-kl. (12) | 73,8 | 72,1 ± 0,9 | −1,7 | 25,7 | 24,9 ± 0,4 | −0,8 |
+| 1 | 10-kl. (6) | 75,8 | 74,2 ± 0,6 | −1,6 | 28,0 | 27,2 ± 0,6 | −0,8 |
+| 1 | 30-kl. (2) | 78,9 | 78,0 ± 0,3 | −0,9 | 32,7 | 32,2 ± 0,5 | −0,5 |
+| 2 | 5-kl. (12) | 69,5 | 69,6 ± 1,5 | +0,1 | 19,7 | 20,1 ± 0,6 | +0,4 |
+| 2 | 10-kl. (6) | 72,4 | 71,4 ± 1,1 | −1,0 | 22,2 | 22,1 ± 0,5 | −0,1 |
+| 2 | 30-kl. (2) | 76,8 | 76,0 ± 0,5 | −0,8 | 27,5 | 27,2 ± 0,3 | −0,3 |
+| 3 | 5-kl. (6) | 69,5 | 70,4 ± 1,1 | +0,9 | 19,7 | 20,0 ± 0,4 | +0,3 |
+| 3 | 10-kl. (3) | 72,7 | 73,3 ± 0,9 | +0,6 | 23,1 | 23,2 ± 0,3 | +0,1 |
+| 3 | 30-kl. (1) | 76,8 | 77,0 ± 0,6 | +0,2 | 29,5 | 29,1 ± 0,4 | −0,4 |
+
+Test t jednopróbkowy wobec wartości z artykułu, df = 3, próg |t| > 3,182:
+
+| konfiguracja | ACC-I Δ | t | ACC-P Δ | t |
+| --- | --- | --- | --- | --- |
+| s1 5-kl. | −1,66 | **−3,66** | −0,76 | **−4,02** |
+| s1 10-kl. | −1,56 | **−4,89** | −0,82 | −2,67 |
+| s1 30-kl. | −0,87 | **−5,85** | −0,53 | −2,24 |
+| s2 5-kl. | +0,14 | 0,18 | +0,41 | 1,27 |
+| s2 10-kl. | −0,95 | −1,71 | −0,07 | −0,28 |
+| s2 30-kl. | −0,76 | −2,86 | −0,35 | −2,13 |
+| s3 5-kl. | +0,92 | 1,65 | +0,30 | 1,56 |
+| s3 10-kl. | +0,62 | 1,40 | +0,12 | 0,82 |
+| s3 30-kl. | +0,20 | 0,64 | −0,41 | −2,05 |
+
+**Istotne są 4 delty z 18, wszystkie w scenariuszu 1 i wszystkie ujemne.** Scenariusze 2 i 3 są
+w pełni zgodne z artykułem: dziewięć na dziewięć delt nieistotnych, największa co do modułu −1,0.
+
+### 20.1 Korekta wobec sekcji 18
+
+Liczby z jednego przebiegu były zbyt optymistyczne i nie należy się na nie powoływać:
+
+| twierdzenie z sekcji 18 | wartość z 1 przebiegu | wartość z 4 ziaren |
+| --- | --- | --- |
+| s2 30-kl. „trafia co do dziesiętnej" | +0,0 | −0,8 (t = −2,86) |
+| s2 5-kl. ACC-I | +2,3 | +0,1 (t = 0,18) |
+| s3 5-kl. ACC-I | +2,6 | +0,9 (t = 1,65) |
+
+Odchylenie ACC-I w scenariuszach 2 i 3 sięga 1,5 punktu, więc pojedynczy przebieg mógł wylosować
+niemal dowolną z tych wartości. Wnioski oparte na Pixel-ACC pozostają w mocy, bo tam odchylenia
+wynoszą 0,3–0,6.
+
+### 20.2 Co pozostaje otwarte
+
+Scenariusz 1 wypada konsekwentnie niżej od artykułu na Image-ACC we wszystkich trzech konfiguracjach
+(−1,66, −1,56, −0,87; t od −3,66 do −5,85). Jest to jedyna systematyczna różnica pozostała
+w Tabelach 1–3 po uzgodnieniu ścieżki uwagi. Scenariusz 1 wyróżnia się tym, że jego zbiór bazowy
+zawiera MVTec i VisA, których nie ma w bazach scenariuszy 2 i 3 — to pierwszy kierunek do sprawdzenia.
+Nie badano.
+
+## 21. Nazwa modelu
+
+Model przez większość prac nosił w tym repozytorium nazwę `ADCT`. Była to nazwa wymyślona przez nas:
+`grep -rin "adct"` po repozytorium referencji nie daje ani jednego trafienia, a README autorów mówi
+o „our proposed model" bez akronimu. W kodzie autorów nazwane są tylko składniki — `CLIPAD`
+(`CLIP/adapter.py`) to sama gałąź wizyjna z adapterami, a `PromptLearner` i `PromptMaker` (`CoOp.py`)
+to prompty; całość nie ma nazwy i jest składana ręcznie w `train_base.py`.
+
+Nazwa została zmieniona na `ContinualMegaBaseline`, moduł `pyclad/vision/models/continual_mega_baseline/`,
+`name()` zwraca `"Continual-MEGA baseline"`. pyCLAD nazywa modele tak, jak nazwali je autorzy metody
+(`FastFlow`, `PaSTe`, `PatchCore`, `RD4AD`); skoro tu autorzy nazwy nie nadali, nazwa opisowa wiążąca
+model z benchmarkiem jest wyszukiwalna, a wymyślony akronim sugerowałby metodę z literatury, której
+nie ma.
+
+Przemianowanie nie unieważnia policzonych wyników: checkpointy zawierają wyłącznie `state_dict`
+adapterów, promptów i optymalizatorów, bez odwołań do klas projektu (sprawdzone na zawartości pikla).
