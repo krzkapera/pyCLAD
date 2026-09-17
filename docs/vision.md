@@ -473,9 +473,7 @@ reader = ContinualMegaBenchmarkReader(
 dataset = reader.read_dataset()
 ```
 
-Training concepts are the task groups (`base`, `task_1`, …) while test concepts are individual classes;
-`dataset.group_by_concept()` maps one to the other, and `reader.index_groups()` inspects the split without
-reading any image.
+Training concepts are the task groups (`base`, `task_1`, …) while test concepts are individual classes.
 
 ## Grouped metrics
 
@@ -485,7 +483,7 @@ single cell first, which is also how the benchmark itself reports its scores —
 instead would weight the larger groups more:
 
 ```python
-groups = dataset.group_by_concept()
+groups = dataset.group_by_concept()   # class -> task group
 summarized_metrics = [FinalStepAverage(), ForgettingMeasureStrict()]
 
 callbacks = [
