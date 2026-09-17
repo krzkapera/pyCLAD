@@ -428,12 +428,30 @@ below"); keep the numbering stable, or fix the callouts with it.
 
 # Continual-MEGA
 
-A large-scale continual anomaly-detection benchmark over seven datasets: ContinualAD, MVTec-AD, VisA,
-Real-IAD, VIADUCT, BTAD and MPDD. Point `data_root` at a directory holding all seven under the names
-used by the benchmark metadata, and `meta_dir` at the `meta_files/` directory of the
-[reference repository](https://github.com/Continual-Mega/Continual-MEGA-Baseline). ContinualAD is on
-[HuggingFace](https://huggingface.co/datasets/Continual-Mega/Continual-MEGA-Benchmark); the other six
-come from their own sources.
+A continual anomaly-detection benchmark spanning seven datasets. Unlike the readers above it defines a
+whole protocol — which classes form the base task, how the rest are split into tasks, which datasets are
+held out for zero-shot — so it has its own reader instead of a `benchmark=` name.
+
+**1. Put the data here**, under the folder names the benchmark metadata expects:
+
+```
+examples/resources/vision/continual_mega/
+├── continual_ad/
+├── mvtec_anomaly_detection/
+├── VisA_20220922/
+├── VIADUCT/
+├── Real-IAD-512/
+├── MPDD/
+├── BTAD/
+└── meta_files/              # copied from the reference repository
+```
+
+**2. Where to get it**: ContinualAD and the `meta_files/` directory come from the benchmark
+[dataset page](https://huggingface.co/datasets/Continual-Mega/Continual-MEGA-Benchmark) and
+[reference repository](https://github.com/Continual-Mega/Continual-MEGA-Baseline); MVTec-AD, VisA, MPDD
+and BTAD are listed under [Datasets](#datasets) above; Real-IAD and VIADUCT come from their own sources.
+
+**3. Pick a scenario:**
 
 | Scenario | Base classes | New classes | Zero-shot |
 |---|---|---|---|
@@ -442,28 +460,29 @@ come from their own sources.
 | 3 | 58 (also no ContinualAD) | 30, split into 6 / 3 / 1 tasks | MVTec-AD, VisA |
 
 ```python
+from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaBenchmarkReader
+
 reader = ContinualMegaBenchmarkReader(
-    data_root="resources/vision/continual_mega",
-    meta_dir="resources/vision/continual_mega/meta_files",
-    scenario=2,
-    task_size=30,
-    zero_shot=True,
-    train_samples="all",
+    data_root="../../resources/vision/continual_mega",
+    meta_dir="../../resources/vision/continual_mega/meta_files",
+    scenario=2,                # 1 | 2 | 3
+    task_size=30,              # classes per task: 5 | 10 | 30
+    zero_shot=True,            # also evaluate on the held-out datasets
+    train_samples="all",       # "all" = benchmark protocol, "normal" = one-class models only
 )
 dataset = reader.read_dataset()
 ```
 
-Training concepts are the task groups (`base`, `task_1`, …); test concepts are individual classes,
-mapped back through `dataset.group_by_concept()`. `index_groups()` returns the same split as plain
-metadata, without touching a single image.
+Training concepts are the task groups (`base`, `task_1`, …), test concepts are individual classes, and
+`dataset.group_by_concept()` maps one to the other. Images load lazily, so building the dataset is cheap;
+`reader.index_groups()` inspects the split without loading any.
 
-## Metrics
+## Grouped metrics
 
-The benchmark reports image-level ROC-AUC and pixel-level AP **averaged over the classes of each
-group**, not over all classes — the groups differ in size, so the two disagree. That is what the
-grouped callbacks are for: they build a group matrix rather than a concept matrix, so one training
-concept may cover several test concepts. Use the plain `ConceptMetricCallback` whenever every training
-concept has exactly one matching test concept.
+Because one training concept covers many test concepts here, the metric matrix is not square and the
+usual `ConceptMetricCallback` does not apply. The grouped callbacks average each group's classes into a
+single cell first, which is also how the benchmark itself reports its scores — averaging over all classes
+instead would weight the larger groups more:
 
 ```python
 groups = dataset.group_by_concept()
@@ -475,24 +494,23 @@ callbacks = [
 ]
 ```
 
-Held-out zero-shot groups appear under `held_out_groups` in the callback output and are excluded from
-ACC and FM.
+Held-out zero-shot groups are reported separately under `held_out_groups` and excluded from both metrics.
 
-## Training modes
+## Supervised models
 
-`train_samples="all"` reproduces the benchmark: 10 normal and 10 anomalous images per class, with pixel
-masks. That needs a supervised model, which travels through its own contract at every level —
-`SupervisedVisionModel.fit(data, labels, masks)`, `SupervisedStrategy.learn(concept)` (a concept, not an
-array, because labels and masks travel with it) and `SupervisedConceptIncrementalScenario`:
+`train_samples="all"` gives 10 normal and 10 anomalous images per class with pixel masks, so the model
+trains on supervision rather than on normal data alone. Such models use their own contract at each level
+— `SupervisedVisionModel.fit(data, labels, masks)`, `SupervisedStrategy.learn(concept)` and
+`SupervisedConceptIncrementalScenario` — because labels and masks travel with the concept:
 
 ```python
-strategy = NaiveSupervisedStrategy(ContinualMegaBaseline(ContinualMegaBaselineConfig(weights_path=...)))
+from pyclad.scenarios.supervised_concept_incremental import SupervisedConceptIncrementalScenario
+from pyclad.vision.strategies.naive_supervised import NaiveSupervisedStrategy
+
+strategy = NaiveSupervisedStrategy(model)
 SupervisedConceptIncrementalScenario(dataset=dataset, strategy=strategy, callbacks=callbacks).run()
 ```
 
-`SupervisedModel` is a sibling of `Model`, not a subtype: `fit(data)` and `fit(data, labels)` are
-different contracts, so a supervised model cannot stand in where an unsupervised one is expected. This
-mirrors how pyCLAD already separates concept-aware, concept-incremental and concept-agnostic streams.
-
-`train_samples="normal"` drops the anomalous training images so that one-class models such as PaSTe and
-FastFlow can run on the same streams with the usual strategies.
+`ContinualMegaBaseline` (`continual_mega_example.py`) is the benchmark's own model: CLIP with adapters
+and learned prompts. Set `train_samples="normal"` instead to run one-class models such as PaSTe or
+FastFlow on the same streams with the usual strategy and scenario.
