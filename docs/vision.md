@@ -473,9 +473,9 @@ reader = ContinualMegaBenchmarkReader(
 dataset = reader.read_dataset()
 ```
 
-Training concepts are the task groups (`base`, `task_1`, …), test concepts are individual classes, and
-`dataset.group_by_concept()` maps one to the other. Images load lazily, so building the dataset is cheap;
-`reader.index_groups()` inspects the split without loading any.
+Training concepts are the task groups (`base`, `task_1`, …) while test concepts are individual classes;
+`dataset.group_by_concept()` maps one to the other, and `reader.index_groups()` inspects the split without
+reading any image.
 
 ## Grouped metrics
 
@@ -499,16 +499,15 @@ Held-out zero-shot groups are reported separately under `held_out_groups` and ex
 ## Supervised models
 
 `train_samples="all"` gives 10 normal and 10 anomalous images per class with pixel masks, so the model
-trains on supervision rather than on normal data alone. Such models use their own contract at each level
-— `SupervisedVisionModel.fit(data, labels, masks)`, `SupervisedStrategy.learn(concept)` and
-`SupervisedConceptIncrementalScenario` — because labels and masks travel with the concept:
+trains on supervision rather than on normal data alone. Vision models of this kind implement
+`SupervisedVisionModel`, which adds an optional `masks` argument to
+[`SupervisedModel.fit`](models.md); `NaiveSupervisedStrategy` passes a concept's masks through to it, and
+the stream runs under [`SupervisedConceptIncrementalScenario`](scenarios.md):
 
 ```python
-from pyclad.scenarios.supervised_concept_incremental import SupervisedConceptIncrementalScenario
 from pyclad.vision.strategies.naive_supervised import NaiveSupervisedStrategy
 
 strategy = NaiveSupervisedStrategy(model)
-SupervisedConceptIncrementalScenario(dataset=dataset, strategy=strategy, callbacks=callbacks).run()
 ```
 
 `ContinualMegaBaseline` (`continual_mega_example.py`) is the benchmark's own model: CLIP with adapters
