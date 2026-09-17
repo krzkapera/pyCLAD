@@ -1,4 +1,4 @@
-ADCT_NORMAL_PROMPTS = (
+NORMAL_PROMPTS = (
     "This is an example of a normal object",
     "This is a typical appearance of the object",
     "This is what a normal object looks like",
@@ -11,7 +11,7 @@ ADCT_NORMAL_PROMPTS = (
     "This object meets standard characteristics.",
 )
 
-ADCT_ANOMALY_PROMPTS = (
+ANOMALY_PROMPTS = (
     "This is an example of an anomalous object",
     "This is not the typical appearance of the object",
     "This is what an anomaly looks like",

@@ -4,7 +4,9 @@ from typing import Union
 import open_clip
 from torch import nn
 
-from pyclad.vision.models.adct.attention import use_reference_attention
+from pyclad.vision.models.continual_mega_baseline.attention import (
+    use_reference_attention,
+)
 
 OPENAI_STATE_DICT_KEYS_TO_DROP = ("input_resolution", "context_length", "vocab_size")
 

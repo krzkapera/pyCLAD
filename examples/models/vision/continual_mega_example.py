@@ -17,8 +17,12 @@ from pyclad.vision.callbacks.grouped_vision_pixel_concept_metric_callback import
 )
 from pyclad.vision.data.benchmarks.continual_mega import ContinualMegaBenchmarkReader
 from pyclad.vision.metrics.pixel_average_precision import PixelAveragePrecision
-from pyclad.vision.models.adct.adct import Adct
-from pyclad.vision.models.adct.config import AdctConfig
+from pyclad.vision.models.continual_mega_baseline.config import (
+    ContinualMegaBaselineConfig,
+)
+from pyclad.vision.models.continual_mega_baseline.continual_mega_baseline import (
+    ContinualMegaBaseline,
+)
 from pyclad.vision.strategies.naive_supervised import NaiveSupervisedStrategy
 
 logging.basicConfig(level=logging.INFO)
@@ -34,8 +38,8 @@ if __name__ == "__main__":
     )
     dataset = reader.read_dataset()
 
-    model = Adct(
-        AdctConfig(
+    model = ContinualMegaBaseline(
+        ContinualMegaBaselineConfig(
             weights_path=pathlib.Path("../../resources/vision/clip/ViT-L-14-336px.pt"),
             epochs=50,
             train_batch_size=16,

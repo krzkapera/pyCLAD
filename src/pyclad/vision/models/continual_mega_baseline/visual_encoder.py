@@ -3,7 +3,7 @@ from typing import List, Sequence, Tuple
 import torch
 from torch import nn
 
-from pyclad.vision.models.adct.adapter import ClipAdapter
+from pyclad.vision.models.continual_mega_baseline.adapter import ClipAdapter
 
 
 class AdaptedVisualEncoder(nn.Module):

@@ -7,7 +7,7 @@ Referencje:
 - kod: https://github.com/Continual-Mega/Continual-MEGA-Baseline
 - dane: https://huggingface.co/datasets/Continual-Mega/Continual-MEGA-Benchmark
 
-Model bazowy (ADCT / CLIP) jest celowo poza zakresem — implementujemy sam benchmark.
+Model bazowy jest celowo poza zakresem — implementujemy sam benchmark.
 
 ---
 
@@ -333,9 +333,9 @@ i sposób trzymania danych testowych w pamięci są ważniejsze niż cokolwiek p
 
 ---
 
-## 6. Baseline ADCT — ustalenia z lektury referencji
+## 6. Baseline Continual-MEGA — ustalenia z lektury referencji
 
-Port modelu bazowego (`pyclad/vision/models/adct/`) odtwarza referencję, a nie „poprawną" wersję CLIP.
+Port modelu bazowego (`pyclad/vision/models/continual_mega_baseline/`) odtwarza referencję, a nie „poprawną" wersję CLIP.
 Trzy odstępstwa referencji od standardowego użycia CLIP są istotne dla wyników i muszą być powtórzone,
 bo checkpointy zostały wytrenowane właśnie tak.
 
@@ -360,7 +360,7 @@ bo konfiguracja o tej nazwie nie ustawia `quick_gelu`) i wgrywa do niego wagi Op
 
 `dataset/continual.py` w ścieżce ewaluacji robi tylko `convert("RGB")`, `exif_transpose`,
 `Resize(336, BICUBIC)` i `ToTensor()`. `create_model` ustawia `model.visual.image_mean/image_std`, ale
-nikt ich nie używa. Do modelu wchodzą wartości z zakresu [0, 1]. Nasz `Adct._to_tensor` dzieli przez 255
+nikt ich nie używa. Do modelu wchodzą wartości z zakresu [0, 1]. Nasz `ContinualMegaBaseline._to_tensor` dzieli przez 255
 i nie normalizuje.
 
 ### 6.4 Brak `albumentations` w `requirements.txt`
@@ -460,7 +460,7 @@ VisA 1,9 GB, MPDD 1,8 GB — razem 115 GB.
 
 ---
 
-## 8. Odtworzenie baseline'u ADCT
+## 8. Odtworzenie baseline'u Continual-MEGA
 
 ### 8.1 Co odpowiada „podstawowej konfiguracji"
 
@@ -845,7 +845,7 @@ Sześć ziaren, baza scenariusza 2, kod autorów:
 | math | 81,78 ± 0,31 | 36,47 ± 0,44 |
 
 Efekt +0,35 przy t(5) = 0,90 jest nieistotny, podczas gdy u nas ten sam zabieg dawał +4,03. Poprawa
-z sekcji 14.4 nie jest więc właściwością metody ADCT, tylko naprawą czegoś, co dotyczyło wyłącznie
+z sekcji 14.4 nie jest więc właściwością metody, tylko naprawą czegoś, co dotyczyło wyłącznie
 naszego stosu.
 
 ### 15.2 Różnica to jeden argument słowa kluczowego
@@ -863,7 +863,7 @@ Wyjaśnia to jednym mechanizmem cztery obserwacje: niewrażliwość referencji n
 większy rozrzut u nas, skuteczność wymuszenia backendu math oraz narastanie różnic w przód wraz
 z głębokością warstw w teście równoważności z sekcji 13.1.
 
-Nie jest to błąd w naszej implementacji ADCT — równoważność matematyczna została potwierdzona na
+Nie jest to błąd w naszej implementacji — równoważność matematyczna została potwierdzona na
 wszystkich ścieżkach w sekcjach 13.1 i 14.5. To różnica biblioteki bazowej: referencja niesie własną,
 zmodyfikowaną kopię `open_clip`, my bierzemy pakiet ze źródeł.
 
@@ -921,7 +921,7 @@ Wobec referencji (36,12 ± 0,94), test niesparowany:
 Odtworzenie ścieżki uwagi referencji, czyli `need_weights=True`, **zamyka resztową różnicę
 treningową**: 36,29 ± 0,51 wobec 36,12 ± 0,94 przy t = 0,39. Ma to sens konstrukcyjny, bo referencja
 wywołuje `nn.MultiheadAttention` dokładnie tak. Różnica ścigana od sekcji 11 nie była więc ani kwestią
-ziarna, ani błędem w implementacji ADCT, tylko ścieżką wykonania uwagi w bibliotece bazowej.
+ziarna, ani błędem w naszej implementacji, tylko ścieżką wykonania uwagi w bibliotece bazowej.
 
 Flagi determinizmu same nic nie dają, bo `warn_only=True` przepuszcza uwagę cuDNN. Dopiero razem
 z `need_weights=True`, które w ogóle omija SDPA, dają powtarzalność co do bitu — a zatem resztkowy
@@ -933,7 +933,7 @@ faktycznie naprawia.
 Wymuszenie backendu math daje 37,26 ± 0,18 na GH200 i 37,09 ± 0,57 na V100, czyli **odtwarza się na
 dwóch architekturach GPU** i przewyższa zarówno naszą konfigurację zgodną z referencją, jak i samą
 referencję, o około jeden punkt. Nie jest to konfiguracja wierna referencji i nie należy jej używać do
-odtwarzania paperu — to osobne ustalenie, że jawny matmul z softmaksem w fp32 uczy ADCT nieco lepiej
+odtwarzania paperu — to osobne ustalenie, że jawny matmul z softmaksem w fp32 uczy baseline nieco lepiej
 niż którakolwiek ze ścieżek używanych przez oba kody.
 
 ## 18. Pełne przeliczenie benchmarku na uzgodnionej ścieżce uwagi
@@ -1100,3 +1100,20 @@ Scenariusz 1 wypada konsekwentnie niżej od artykułu na Image-ACC we wszystkich
 w Tabelach 1–3 po uzgodnieniu ścieżki uwagi. Scenariusz 1 wyróżnia się tym, że jego zbiór bazowy
 zawiera MVTec i VisA, których nie ma w bazach scenariuszy 2 i 3 — to pierwszy kierunek do sprawdzenia.
 Nie badano.
+
+## 21. Nazwa modelu
+
+Model przez większość prac nosił w tym repozytorium nazwę `ADCT`. Była to nazwa wymyślona przez nas:
+`grep -rin "adct"` po repozytorium referencji nie daje ani jednego trafienia, a README autorów mówi
+o „our proposed model" bez akronimu. W kodzie autorów nazwane są tylko składniki — `CLIPAD`
+(`CLIP/adapter.py`) to sama gałąź wizyjna z adapterami, a `PromptLearner` i `PromptMaker` (`CoOp.py`)
+to prompty; całość nie ma nazwy i jest składana ręcznie w `train_base.py`.
+
+Nazwa została zmieniona na `ContinualMegaBaseline`, moduł `pyclad/vision/models/continual_mega_baseline/`,
+`name()` zwraca `"Continual-MEGA baseline"`. pyCLAD nazywa modele tak, jak nazwali je autorzy metody
+(`FastFlow`, `PaSTe`, `PatchCore`, `RD4AD`); skoro tu autorzy nazwy nie nadali, nazwa opisowa wiążąca
+model z benchmarkiem jest wyszukiwalna, a wymyślony akronim sugerowałby metodę z literatury, której
+nie ma.
+
+Przemianowanie nie unieważnia policzonych wyników: checkpointy zawierają wyłącznie `state_dict`
+adapterów, promptów i optymalizatorów, bez odwołań do klas projektu (sprawdzone na zawartości pikla).

@@ -4,23 +4,35 @@ import numpy as np
 import open_clip
 import torch
 
-from pyclad.vision.models.adct.backbone import build_clip_backbone
-from pyclad.vision.models.adct.config import AdctConfig
-from pyclad.vision.models.adct.prompt_learner import AdctPromptLearner
-from pyclad.vision.models.adct.prompts import ADCT_ANOMALY_PROMPTS, ADCT_NORMAL_PROMPTS
-from pyclad.vision.models.adct.scoring import anomaly_scores_and_maps
-from pyclad.vision.models.adct.text_encoder import ClipTextEncoder, encode_prompt_groups
-from pyclad.vision.models.adct.trainer import AdctTrainer
-from pyclad.vision.models.adct.visual_encoder import AdaptedVisualEncoder
+from pyclad.vision.models.continual_mega_baseline.backbone import build_clip_backbone
+from pyclad.vision.models.continual_mega_baseline.config import (
+    ContinualMegaBaselineConfig,
+)
+from pyclad.vision.models.continual_mega_baseline.prompt_learner import PromptLearner
+from pyclad.vision.models.continual_mega_baseline.prompts import (
+    ANOMALY_PROMPTS,
+    NORMAL_PROMPTS,
+)
+from pyclad.vision.models.continual_mega_baseline.scoring import anomaly_scores_and_maps
+from pyclad.vision.models.continual_mega_baseline.text_encoder import (
+    ClipTextEncoder,
+    encode_prompt_groups,
+)
+from pyclad.vision.models.continual_mega_baseline.trainer import (
+    ContinualMegaBaselineTrainer,
+)
+from pyclad.vision.models.continual_mega_baseline.visual_encoder import (
+    AdaptedVisualEncoder,
+)
 from pyclad.vision.models.supervised_vision_model import SupervisedVisionModel
 from pyclad.vision.prediction_results import VisionPredictionResults
 
-ADCT_PROMPT_GROUPS = {"normal": ADCT_NORMAL_PROMPTS, "abnormal": ADCT_ANOMALY_PROMPTS}
+PROMPT_GROUPS = {"normal": NORMAL_PROMPTS, "abnormal": ANOMALY_PROMPTS}
 IMAGE_VALUE_RANGE = 255.0
 
 
-class Adct(SupervisedVisionModel):
-    def __init__(self, config: AdctConfig):
+class ContinualMegaBaseline(SupervisedVisionModel):
+    def __init__(self, config: ContinualMegaBaselineConfig):
         self.config = config
         self.device = torch.device(config.device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
@@ -36,10 +48,10 @@ class Adct(SupervisedVisionModel):
             noise_sigma=config.noise_sigma,
             noise_in_float32=config.noise_in_float32,
         ).to(self.device)
-        self.prompt_learner = AdctPromptLearner(
+        self.prompt_learner = PromptLearner(
             token_embedding=clip_model.token_embedding,
             context_dim=clip_model.ln_final.weight.shape[0],
-            prompt_groups=ADCT_PROMPT_GROUPS,
+            prompt_groups=PROMPT_GROUPS,
             n_ctx=config.n_ctx,
             tokenize=open_clip.tokenize,
         ).to(self.device)
@@ -47,7 +59,7 @@ class Adct(SupervisedVisionModel):
         self.visual_encoder.eval()
         self.prompt_learner.eval()
         self.text_encoder.eval()
-        self.trainer = AdctTrainer(
+        self.trainer = ContinualMegaBaselineTrainer(
             visual_encoder=self.visual_encoder,
             prompt_learner=self.prompt_learner,
             text_features=self.text_features,
@@ -108,4 +120,4 @@ class Adct(SupervisedVisionModel):
         return tensor.permute(0, 3, 1, 2).float().div_(IMAGE_VALUE_RANGE)
 
     def name(self) -> str:
-        return "ADCT"
+        return "Continual-MEGA baseline"

@@ -3,10 +3,10 @@ from typing import Callable, List, Mapping, Sequence
 import torch
 from torch import nn
 
-from pyclad.vision.models.adct.text_encoder import PromptGroup
+from pyclad.vision.models.continual_mega_baseline.text_encoder import PromptGroup
 
 
-class AdctPromptLearner(nn.Module):
+class PromptLearner(nn.Module):
     def __init__(
         self,
         token_embedding: nn.Module,

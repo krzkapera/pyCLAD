@@ -3,22 +3,29 @@ from typing import Any, Callable, Dict, List, Optional
 import torch
 from torch.nn import functional
 
-from pyclad.vision.models.adct.config import AdctConfig
-from pyclad.vision.models.adct.losses import binary_dice_loss, focal_loss
-from pyclad.vision.models.adct.prompt_learner import AdctPromptLearner
-from pyclad.vision.models.adct.visual_encoder import AdaptedVisualEncoder
+from pyclad.vision.models.continual_mega_baseline.config import (
+    ContinualMegaBaselineConfig,
+)
+from pyclad.vision.models.continual_mega_baseline.losses import (
+    binary_dice_loss,
+    focal_loss,
+)
+from pyclad.vision.models.continual_mega_baseline.prompt_learner import PromptLearner
+from pyclad.vision.models.continual_mega_baseline.visual_encoder import (
+    AdaptedVisualEncoder,
+)
 
 NORMAL_CHANNEL = 0
 ANOMALY_CHANNEL = 1
 
 
-class AdctTrainer:
+class ContinualMegaBaselineTrainer:
     def __init__(
         self,
         visual_encoder: AdaptedVisualEncoder,
-        prompt_learner: AdctPromptLearner,
+        prompt_learner: PromptLearner,
         text_features: Callable[[], torch.Tensor],
-        config: AdctConfig,
+        config: ContinualMegaBaselineConfig,
         train_prompts: bool,
     ):
         self.visual_encoder = visual_encoder

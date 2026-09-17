@@ -4,7 +4,7 @@ from typing import Optional, Tuple, Union
 
 
 @dataclass(frozen=True)
-class AdctConfig:
+class ContinualMegaBaselineConfig:
     weights_path: Union[str, Path]
     clip_model_name: str = "ViT-L-14-336"
     image_size: int = 336
