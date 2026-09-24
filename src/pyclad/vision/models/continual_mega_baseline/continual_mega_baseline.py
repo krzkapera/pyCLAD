@@ -81,6 +81,7 @@ class ContinualMegaBaseline(SupervisedVisionModel):
             loss = self.trainer.train_epoch(images, targets, pixel_targets)
             if on_epoch_end is not None:
                 on_epoch_end(self.trainer.epochs_completed, loss)
+        self.trainer.epochs_completed = 0
 
     def text_features(self) -> torch.Tensor:
         return encode_prompt_groups(self.text_encoder, self.prompt_learner())

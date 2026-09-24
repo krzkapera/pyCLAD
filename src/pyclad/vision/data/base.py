@@ -180,11 +180,11 @@ def select_categories(
     return list(requested_categories)
 
 
-def list_image_files(directory: Path, image_extensions: Iterable[str], recursive: bool = False) -> List[Path]:
+def list_image_files(directory: Path, image_extensions: Iterable[str]) -> List[Path]:
     if not directory.exists():
         raise FileNotFoundError(f"Image directory not found: {directory}")
     suffixes = {extension.lower() for extension in image_extensions}
-    candidates = directory.rglob("*") if recursive else directory.iterdir()
+    candidates = directory.iterdir()
     return sorted(path for path in candidates if path.is_file() and path.suffix.lower() in suffixes)
 
 
