@@ -54,18 +54,39 @@ class ContinualMegaDataset(ConceptsDataset):
         train_concepts: Sequence[Concept],
         test_concepts: Sequence[Concept],
         group_by_concept: Mapping[str, str],
+        training_groups: Sequence[str],
         held_out_groups: Sequence[str],
         scenario: int,
         task_size: int,
     ):
         super().__init__(name=name, train_concepts=train_concepts, test_concepts=test_concepts)
         self._group_by_concept = dict(group_by_concept)
+        self._training_groups = list(training_groups)
         self._held_out_groups = list(held_out_groups)
         self._scenario = scenario
         self._task_size = task_size
 
     def group_by_concept(self) -> Dict[str, str]:
         return dict(self._group_by_concept)
+
+    def first_seen_step(self) -> Dict[str, int]:
+        """Map every test class to the index of the task group that first trains on it.
+
+        This is what the schedule-aware metrics consume, since training steps are task groups while
+        evaluation stays per class.
+
+        :raises ValueError: when the stream carries held-out zero-shot groups. Their classes are never
+            trained, so no training step describes them, and the metrics would have to be told to skip
+            columns they cannot interpret. Read the dataset with ``zero_shot=False`` for this mapping.
+        """
+        if self._held_out_groups:
+            raise ValueError(
+                f"Dataset {self.name()!r} holds out {self._held_out_groups} for zero-shot evaluation, so "
+                "their classes never enter training and have no first seen step. Schedule-aware metrics "
+                "describe trained concepts; read the dataset with zero_shot=False to use them."
+            )
+        step_by_group = {group: step for step, group in enumerate(self._training_groups)}
+        return {concept: step_by_group[group] for concept, group in self._group_by_concept.items()}
 
     def held_out_groups(self) -> List[str]:
         return list(self._held_out_groups)
@@ -142,6 +163,7 @@ class ContinualMegaBenchmarkReader:
                 with_labels=True,
             ),
             group_by_concept={concept_name: group.name for group in groups for concept_name, _ in group.test_concepts},
+            training_groups=[group.name for group in groups if not group.held_out],
             held_out_groups=[group.name for group in groups if group.held_out],
             scenario=self.scenario,
             task_size=self.task_size,
