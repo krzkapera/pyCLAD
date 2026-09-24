@@ -30,6 +30,24 @@ class ConceptGroup:
 
 
 class ContinualMegaDataset(ConceptsDataset):
+    """
+    Continual-MEGA benchmark stream: task groups as training concepts, individual classes as test concepts.
+
+    If using, please cite:
+
+    .. code-block:: bibtex
+
+        @article{lee2026continual,
+          title={Continual-MEGA: A large-scale benchmark for generalizable continual anomaly detection},
+          author={Lee, Geonu and Oh, Yujeong and Jang, Geonhui and Lee, Soyoung and Song, Jeonghyo
+                  and Cha, Sungmin and Yoo, YoungJoon},
+          journal={Neurocomputing},
+          pages={134460},
+          year={2026},
+          publisher={Elsevier}
+        }
+    """
+
     def __init__(
         self,
         name: str,
