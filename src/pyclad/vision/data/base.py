@@ -79,6 +79,13 @@ class VisionBenchmarkReader(ABC):
         max_train_samples_per_category: Optional[int] = None,
         max_test_samples_per_category: Optional[int] = None,
     ) -> ConceptsDataset:
+        options = ImageLoadOptions(
+            data_mode=data_mode,
+            resize_to=resize_to,
+            color_mode=color_mode,
+            interpolation=interpolation,
+            apply_exif_transpose=apply_exif_transpose,
+        )
         samples = self.index_samples(
             categories=categories,
             max_train_samples_per_category=max_train_samples_per_category,
@@ -88,11 +95,7 @@ class VisionBenchmarkReader(ABC):
             samples=samples,
             categories=categories,
             dataset_name=dataset_name or f"{self.name.upper()}-VisionBenchmark",
-            data_mode=data_mode,
-            resize_to=resize_to,
-            color_mode=color_mode,
-            interpolation=interpolation,
-            apply_exif_transpose=apply_exif_transpose,
+            options=options,
         )
 
 
@@ -126,19 +129,9 @@ def build_concepts_dataset_from_samples(
     samples: Sequence[VisionSample],
     dataset_name: str,
     categories: Optional[Sequence[str]] = None,
-    data_mode: str = "numpy",
-    resize_to: Optional[Tuple[int, int]] = None,
-    color_mode: str = "rgb",
-    interpolation: str = "bilinear",
-    apply_exif_transpose: bool = False,
+    options: Optional[ImageLoadOptions] = None,
 ) -> ConceptsDataset:
-    options = ImageLoadOptions(
-        data_mode=data_mode,
-        resize_to=resize_to,
-        color_mode=color_mode,
-        interpolation=interpolation,
-        apply_exif_transpose=apply_exif_transpose,
-    )
+    options = options if options is not None else ImageLoadOptions()
     selected_categories = resolve_category_order(samples=samples, categories=categories)
 
     buckets: Dict[Tuple[str, str], List[VisionSample]] = defaultdict(list)
@@ -180,11 +173,11 @@ def select_categories(
     return list(requested_categories)
 
 
-def list_image_files(directory: Path, image_extensions: Iterable[str], recursive: bool = False) -> List[Path]:
+def list_image_files(directory: Path, image_extensions: Iterable[str]) -> List[Path]:
     if not directory.exists():
         raise FileNotFoundError(f"Image directory not found: {directory}")
     suffixes = {extension.lower() for extension in image_extensions}
-    candidates = directory.rglob("*") if recursive else directory.iterdir()
+    candidates = directory.iterdir()
     return sorted(path for path in candidates if path.is_file() and path.suffix.lower() in suffixes)
 
 
