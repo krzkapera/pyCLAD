@@ -477,10 +477,10 @@ Training concepts are the task groups (`base`, `task_1`, …) while test concept
 
 ## Grouped metrics
 
-Because one training concept covers many test concepts here, the metric matrix is not square and the
-usual `ConceptMetricCallback` does not apply. The grouped callbacks average each group's classes into a
-single cell first, which is also how the benchmark itself reports its scores — averaging over all classes
-instead would weight the larger groups more:
+One training concept covers many test concepts here, so the benchmark reports a score per task group
+rather than per class. The grouped callbacks average each group's classes into a single cell before the
+summarized metrics see the matrix; averaging over all classes instead would weight the larger groups
+more and give different numbers:
 
 ```python
 groups = dataset.group_by_concept()   # class -> task group
@@ -493,6 +493,26 @@ callbacks = [
 ```
 
 Held-out zero-shot groups are reported separately under `held_out_groups` and excluded from both metrics.
+
+For a per-class view, add the plain `ConceptMetricCallback` alongside them: its matrix has one column per
+class and one row per task group, which is the rectangular shape the
+[schedule-aware metrics](metrics.md) describe. `dataset.first_seen_step()` supplies the mapping they need
+and answers what the grouped metrics cannot — whether a class was learned at all, or was already that
+good before training:
+
+```python
+from pyclad.callbacks.evaluation.concept_metric_evaluation import ScheduleAwareConceptMetricCallback
+
+callback = ScheduleAwareConceptMetricCallback(
+    base_metric=RocAuc(),
+    summarized_metrics=[FinalStepAverage()],
+    schedule_aware_metrics=[ScheduleAwareForwardTransfer(), ScheduleAwareNewTaskAcquisition()],
+    first_seen_step=dataset.first_seen_step(),
+)
+```
+
+`first_seen_step()` requires `zero_shot=False`: held-out classes never enter training, so no training step
+describes them.
 
 ## Supervised models
 
