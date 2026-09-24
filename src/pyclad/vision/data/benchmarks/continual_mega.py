@@ -70,15 +70,6 @@ class ContinualMegaDataset(ConceptsDataset):
         return dict(self._group_by_concept)
 
     def first_seen_step(self) -> Dict[str, int]:
-        """Map every test class to the index of the task group that first trains on it.
-
-        This is what the schedule-aware metrics consume, since training steps are task groups while
-        evaluation stays per class.
-
-        :raises ValueError: when the stream carries held-out zero-shot groups. Their classes are never
-            trained, so no training step describes them, and the metrics would have to be told to skip
-            columns they cannot interpret. Read the dataset with ``zero_shot=False`` for this mapping.
-        """
         if self._held_out_groups:
             raise ValueError(
                 f"Dataset {self.name()!r} holds out {self._held_out_groups} for zero-shot evaluation, so "
